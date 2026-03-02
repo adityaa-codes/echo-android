@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.test.runCurrent
 
 class EchoClientImplTest {
 
@@ -24,5 +25,37 @@ class EchoClientImplTest {
         }
         
         assertTrue(client is EchoClientImpl)
+    }
+
+    @Test
+    fun `client handles disconnect and channel methods`() = runTest {
+        val client = Echo.create {
+            client {
+                host = "ws.example.com"
+                apiKey = "test-key"
+            }
+        }
+        
+        val channel1 = client.channel("pub-chan")
+        val channel2 = client.channel("pub-chan")
+        
+        // Deduplication test
+        assertEquals(channel1, channel2)
+        
+        val privChannel = client.private("my-priv")
+        assertTrue(privChannel.name.startsWith("private-"))
+        
+        val presChannel = client.join("my-pres")
+        assertTrue(presChannel.name.startsWith("presence-"))
+        
+        client.leave("pub-chan")
+        
+        // Ensure new instance is created after leave
+        val channel3 = client.channel("pub-chan")
+        assertTrue(channel1 !== channel3)
+
+        client.disconnect()
+        runCurrent()
+        assertTrue(client.state.value is io.github.adityaacodes.echo.state.ConnectionState.Disconnected)
     }
 }

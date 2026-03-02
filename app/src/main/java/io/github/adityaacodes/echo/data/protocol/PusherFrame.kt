@@ -16,13 +16,17 @@ internal data class ConnectionEstablished(
     val data: String
 ) : PusherFrame()
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 internal data class Ping(
+    @EncodeDefault val event: String = "pusher:ping",
     val data: JsonElement? = null
 ) : PusherFrame()
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 internal data class Pong(
+    @EncodeDefault val event: String = "pusher:pong",
     val data: JsonElement? = null
 ) : PusherFrame()
 

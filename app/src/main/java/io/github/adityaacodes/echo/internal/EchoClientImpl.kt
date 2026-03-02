@@ -20,18 +20,17 @@ import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 
 internal class EchoClientImpl(
-    private val builder: EchoBuilder
+    private val builder: EchoBuilder,
+    private val httpClient: HttpClient = HttpClient(OkHttp) {
+        install(WebSockets) {
+            pingInterval = -1L // We handle ping/pong manually
+        }
+    }
 ) : EchoClient {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private val channels = ConcurrentHashMap<String, EchoChannel>()
-
-    private val httpClient = HttpClient(OkHttp) {
-        install(WebSockets) {
-            pingInterval = -1L // We handle ping/pong manually
-        }
-    }
 
     private val url = buildString {
         append(if (builder.clientConfig.cluster != null) "wss" else "ws")

@@ -71,4 +71,35 @@ class KtorEchoConnectionTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `handleRawText with ping replies with pong`() = runTest {
+        val mockEngine = MockEngine { request -> respondOk() }
+        val client = HttpClient(mockEngine) { install(WebSockets) }
+        val connection = KtorEchoConnection(client, "ws://localhost", scope = this)
+
+        // It won't actually send because session is null when not connected, but it won't crash
+        connection.handleRawText("""{"event":"pusher:ping"}""")
+    }
+
+    @Test
+    fun `handleRawText with error disconnects`() = runTest {
+        val mockEngine = MockEngine { request -> respondOk() }
+        val client = HttpClient(mockEngine) { install(WebSockets) }
+        val connection = KtorEchoConnection(client, "ws://localhost", scope = this)
+
+        connection.state.test {
+            assertTrue(awaitItem() is ConnectionState.Disconnected)
+            
+            connection.handleRawText("""{"event":"pusher:error","data":{"message":"Invalid version","code":4000}}""")
+            
+            val errorState = awaitItem()
+            assertTrue(errorState is ConnectionState.Disconnected)
+            val error = (errorState as ConnectionState.Disconnected).reason
+            assertTrue(error is io.github.adityaacodes.echo.error.EchoError.Protocol)
+            assertEquals(4000, (error as io.github.adityaacodes.echo.error.EchoError.Protocol).code)
+            
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

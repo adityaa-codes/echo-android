@@ -50,9 +50,58 @@ class PusherFrameTest {
         )
 
         val jsonString = json.encodeToString(PusherFrame.serializer(), command)
-        println("Encoded JSON: $jsonString")
         assertTrue(jsonString.contains("pusher:subscribe"))
         assertTrue(jsonString.contains("private-chat"))
         assertTrue(jsonString.contains("some_auth_token"))
+    }
+
+    @Test
+    fun `parse and serialize ping pong`() {
+        val pingStr = """{"event":"pusher:ping"}"""
+        val pingFrame = json.decodeFromString<PusherFrame>(pingStr)
+        assertTrue(pingFrame is Ping)
+        
+        val pongStr = """{"event":"pusher:pong"}"""
+        val pongFrame = json.decodeFromString<PusherFrame>(pongStr)
+        assertTrue(pongFrame is Pong)
+
+        val pongEncoded = json.encodeToString(PusherFrame.serializer(), Pong())
+        assertTrue(pongEncoded.contains("pusher:pong"))
+        
+        val pingEncoded = json.encodeToString(PusherFrame.serializer(), Ping())
+        assertTrue(pingEncoded.contains("pusher:ping"))
+    }
+
+    @Test
+    fun `parse error frame`() {
+        val errorStr = """{"event":"pusher:error","data":{"message":"Forbidden","code":4000}}"""
+        val frame = json.decodeFromString<PusherFrame>(errorStr)
+        assertTrue(frame is ErrorFrame)
+        assertEquals("Forbidden", (frame as ErrorFrame).data?.message)
+        assertEquals(4000, frame.data?.code)
+    }
+
+    @Test
+    fun `parse internal pusher events`() {
+        val subStr = """{"event":"pusher_internal:subscription_succeeded","channel":"my-channel","data":"{}"}"""
+        val subFrame = json.decodeFromString<PusherFrame>(subStr)
+        assertTrue(subFrame is SubscriptionSucceeded)
+        assertEquals("my-channel", (subFrame as SubscriptionSucceeded).channel)
+
+        val addStr = """{"event":"pusher_internal:member_added","channel":"presence-ch","data":"user1"}"""
+        val addFrame = json.decodeFromString<PusherFrame>(addStr)
+        assertTrue(addFrame is MemberAdded)
+
+        val rmStr = """{"event":"pusher_internal:member_removed","channel":"presence-ch","data":"user1"}"""
+        val rmFrame = json.decodeFromString<PusherFrame>(rmStr)
+        assertTrue(rmFrame is MemberRemoved)
+    }
+
+    @Test
+    fun `serialize unsubscribe command`() {
+        val command = UnsubscribeCommand(data = UnsubscribeCommand.UnsubscribeData("my-channel"))
+        val jsonString = json.encodeToString(PusherFrame.serializer(), command)
+        assertTrue(jsonString.contains("pusher:unsubscribe"))
+        assertTrue(jsonString.contains("my-channel"))
     }
 }

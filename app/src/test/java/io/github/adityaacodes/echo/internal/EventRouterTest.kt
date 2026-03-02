@@ -70,6 +70,23 @@ class EventRouterTest {
             assertEquals("pusher_internal:subscription_succeeded", subEvent.event)
             assertEquals("private-1", subEvent.channel)
             assertEquals("{}", subEvent.data)
+
+            // Error event should be mapped
+            sharedFlow.emit(io.github.adityaacodes.echo.data.protocol.ErrorFrame(
+                io.github.adityaacodes.echo.data.protocol.ErrorFrame.ErrorData("Test error", 123)
+            ))
+            val errEvent = awaitItem()
+            assertEquals("pusher:error", errEvent.event)
+            assertTrue(errEvent.data?.contains("Test error") == true)
+            
+            // Member added/removed
+            sharedFlow.emit(io.github.adityaacodes.echo.data.protocol.MemberAdded("presence-ch", "user1"))
+            val memAddEvent = awaitItem()
+            assertEquals("pusher_internal:member_added", memAddEvent.event)
+            
+            sharedFlow.emit(io.github.adityaacodes.echo.data.protocol.MemberRemoved("presence-ch", "user1"))
+            val memRmEvent = awaitItem()
+            assertEquals("pusher_internal:member_removed", memRmEvent.event)
         }
     }
 }
