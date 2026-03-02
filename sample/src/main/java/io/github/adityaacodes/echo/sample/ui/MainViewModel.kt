@@ -26,27 +26,29 @@ class MainViewModel : ViewModel() {
 
     fun processIntent(intent: MainViewIntent) {
         when (intent) {
-            is MainViewIntent.Connect -> connect(intent.url)
+            is MainViewIntent.Connect -> connect(intent.host, intent.port, intent.useTls, intent.appKey)
             MainViewIntent.Disconnect -> disconnect()
         }
     }
 
-    private fun connect(url: String) {
-        if (url.isBlank()) {
+    private fun connect(host: String, port: Int?, useTls: Boolean, appKey: String) {
+        if (host.isBlank() || appKey.isBlank()) {
             viewModelScope.launch {
-                _viewEffect.emit(MainViewEffect.ShowToast("URL cannot be empty"))
+                _viewEffect.emit(MainViewEffect.ShowToast("Host and App Key cannot be empty"))
             }
             return
         }
 
         viewModelScope.launch {
             try {
-                // Initialize the client if not already done
-                if (echoClient == null) {
-                    echoClient = Echo.create {
-                        // Normally you'd configure the client here based on the URL or other settings
-                        // For this basic sample, we just create the instance. 
-                        // In a real app, Echo.create might require a host/key.
+                // We disconnect and recreate client to allow testing different configs
+                echoClient?.disconnect()
+                echoClient = Echo.create {
+                    client {
+                        this.host = host
+                        this.port = port
+                        this.useTls = useTls
+                        this.apiKey = appKey
                     }
                 }
 
@@ -59,6 +61,7 @@ class MainViewModel : ViewModel() {
 
                 // Actually initiate connection
                 echoClient?.connect()
+                val url = "${if(useTls) "wss" else "ws"}://$host${if(port!=null) ":$port" else ""}"
                 _viewState.update { it.copy(connectedUrl = url, errorMessage = null) }
 
             } catch (e: Exception) {

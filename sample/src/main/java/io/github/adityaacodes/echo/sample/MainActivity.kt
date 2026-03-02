@@ -57,7 +57,10 @@ fun MainScreen(
     state: io.github.adityaacodes.echo.sample.ui.MainViewState,
     onIntent: (MainViewIntent) -> Unit
 ) {
-    var urlInput by remember { mutableStateOf("wss://example.com/reverb") }
+    var hostInput by remember { mutableStateOf("10.0.2.2") }
+    var portInput by remember { mutableStateOf("8080") }
+    var keyInput by remember { mutableStateOf("reverb-app-key") }
+    var useTls by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -91,9 +94,33 @@ fun MainScreen(
             }
 
             OutlinedTextField(
-                value = urlInput,
-                onValueChange = { urlInput = it },
-                label = { Text("WebSocket URL") },
+                value = hostInput,
+                onValueChange = { hostInput = it },
+                label = { Text("Host (e.g., 10.0.2.2)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = portInput,
+                    onValueChange = { portInput = it },
+                    label = { Text("Port (e.g., 8080)") },
+                    modifier = Modifier.weight(1f)
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Checkbox(checked = useTls, onCheckedChange = { useTls = it })
+                    Text("Use TLS (wss)")
+                }
+            }
+
+            OutlinedTextField(
+                value = keyInput,
+                onValueChange = { keyInput = it },
+                label = { Text("App Key") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -102,7 +129,14 @@ fun MainScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { onIntent(MainViewIntent.Connect(urlInput)) },
+                    onClick = { 
+                        onIntent(MainViewIntent.Connect(
+                            host = hostInput, 
+                            port = portInput.toIntOrNull(), 
+                            useTls = useTls, 
+                            appKey = keyInput
+                        )) 
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Connect")

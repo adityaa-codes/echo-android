@@ -9,7 +9,7 @@ data class MainViewState(
 )
 
 sealed interface MainViewIntent {
-    data class Connect(val url: String) : MainViewIntent
+    data class Connect(val host: String, val port: Int?, val useTls: Boolean, val appKey: String) : MainViewIntent
     object Disconnect : MainViewIntent
 }
 
