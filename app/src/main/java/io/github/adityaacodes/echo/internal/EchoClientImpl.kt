@@ -25,7 +25,7 @@ internal class EchoClientImpl(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
-    private val channels = ConcurrentHashMap<String, EchoChannelImpl>()
+    private val channels = ConcurrentHashMap<String, EchoChannel>()
 
     private val httpClient = HttpClient(OkHttp) {
         install(WebSockets) {
@@ -79,7 +79,26 @@ internal class EchoClientImpl(
     }
 
     override fun join(name: String): PresenceChannel {
-        throw NotImplementedError("Presence channel subscriptions not implemented yet (Phase 8)")
+        val channelName = if (name.startsWith("presence-")) name else "presence-$name"
+        return channels.getOrPut(channelName) {
+            val delegate = EchoChannelImpl(
+                name = channelName,
+                connection = connection,
+                eventRouter = eventRouter,
+                scope = scope,
+                json = json,
+                authenticator = builder.authConfig.authenticator,
+                onLeave = { leftChannelName ->
+                    channels.remove(leftChannelName)
+                }
+            )
+            PresenceChannelImpl(
+                delegate = delegate,
+                eventRouter = eventRouter,
+                scope = scope,
+                json = json
+            )
+        } as PresenceChannel
     }
 
     override fun leave(name: String) {

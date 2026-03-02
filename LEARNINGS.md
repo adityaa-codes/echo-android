@@ -30,3 +30,8 @@ This document captures the key technical decisions, architectural patterns, and 
 - **Pre-flight Suspending Authentication:** Modified the `EchoChannelImpl.subscribe()` flow to wait for the `ConnectionState.Connected` state using `.first()`, allowing us to extract the `socketId`. This `socketId` and channel name are then passed to the user-provided `Authenticator` interface to fetch the signature asynchronously before sending the `pusher:subscribe` JSON payload.
 - **Graceful Failure Handling:** Designed the subscription process to transition the channel state to `ChannelState.Failed(EchoError.Auth)` if authentication fails, ensuring the main WebSocket connection remains uninterrupted.
 - **Client Events (Whispering):** Added `whisper` and `listenForWhisper` implementations that are guarded to only allow outgoing client events on `private-*` and `presence-*` channels.
+
+## Phase 8: Presence Channels & Member Tracking
+- **Composition over Inheritance:** Used Kotlin's interface delegation (`by delegate`) in `PresenceChannelImpl` to wrap the `EchoChannelImpl` logic. This avoids polluting standard channels with presence logic and avoids making classes `open` needlessly.
+- **JSON Flexibility:** Updated the `Member` interface to expose `info` as `JsonElement` instead of a flat `Map`, better handling nested user details returned from backend authenticators.
+- **Reactive Member Lists:** Maintained a private `MutableStateFlow<List<Member>>` that immediately updates upon `SubscriptionSucceeded` (initial roster), `MemberAdded`, and `MemberRemoved` internal Pusher frames.
