@@ -64,5 +64,12 @@ A resilient SDK must handle disconnects gracefully and attempt to reconnect auto
 ---
 
 ## 9. Milestones & Timeline
-*   **M1 (Implementation):** TBD
+*   **M1 (Implementation):** Completed (2026-03-02)
 *   **M2 (Review & QA):** TBD
+
+---
+
+## 10. Learnings & Retrospective (Phase 4)
+*   **Random Range Overflow:** When calculating exponential backoff, applying a bitwise shift (`1 shl (attempt - 1)`) can quickly overflow standard Integer bounds if the network remains down for many attempts. 
+*   **Resolution:** Capped the attempt multiplier at `min(attempt, 20)` to prevent the base exponent from overflowing before multiplying by the initial delay, and then clamped the final value to `MAX_DELAY_MS` (30s) before applying jitter.
+*   **Reconnection Race Conditions in Tests:** Using `Turbine` to test infinite loop reconnect logic requires strict scoping (using `backgroundScope`) to prevent `UncompletedCoroutinesError`. Additionally, testing immediate transitions (e.g., `Connecting` -> `Disconnected(NetworkError)` -> `Reconnecting(attempt=2)`) requires careful synchronization to avoid racing against explicit `disconnect()` commands in unit tests.
