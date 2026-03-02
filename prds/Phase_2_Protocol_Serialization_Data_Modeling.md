@@ -68,5 +68,12 @@ Using `kotlinx.serialization` with polymorphic parsing allows us to map raw JSON
 ---
 
 ## 9. Milestones & Timeline
-*   **M1 (Implementation):** TBD
+*   **M1 (Implementation):** Completed (2026-03-02)
 *   **M2 (Review & QA):** TBD
+
+---
+
+## 10. Learnings & Retrospective (Phase 2)
+*   **Polymorphic Serialization:** Using a standard `@JsonClassDiscriminator` on a sealed class is dangerous here because the Pusher protocol mixes known system events (`pusher:ping`, `pusher:error`) with arbitrary user-defined events (e.g., `App\Events\OrderCreated`). If an unknown event is received, the default sealed class parser throws an exception.
+*   **Resolution:** Implemented a `JsonContentPolymorphicSerializer` (`PusherFrameSerializer`). It inspects the JSON tree before deserialization. If the `event` matches a known system frame, it deserializes into a specific type (e.g., `ConnectionEstablished`); otherwise, it gracefully falls back to a `GenericEvent` catch-all.
+*   **Default Values & Serialization:** Discovered that properties with default values (like `val event: String = "pusher:subscribe"`) are excluded from serialization by default to save space. Fixed this by explicitly applying the `@EncodeDefault` annotation to ensure outgoing commands are correctly formatted.

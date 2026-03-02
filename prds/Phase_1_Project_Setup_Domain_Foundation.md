@@ -72,5 +72,12 @@ By defining strict interfaces and state machines upfront, we ensure the SDK is i
 ---
 
 ## 9. Milestones & Timeline
-*   **M1 (Implementation):** TBD
+*   **M1 (Implementation):** Completed (2026-03-02)
 *   **M2 (Review & QA):** TBD
+
+---
+
+## 10. Learnings & Retrospective (Phase 1)
+*   **Gradle Multi-module Complexity vs. Practicality:** Initially, the plan was to create a strict multi-module architecture (extracting the core library into a separate `:core` module) to enforce `explicitApi()` and isolation. However, configuring multiple plugins (`android.library`, `kotlin.android`) across a root `build.gradle.kts`, an `app` module, and a `core` module led to cascading plugin resolution and extension registration errors in Gradle 9/8.9. 
+*   **Resolution:** To unblock development and maintain velocity, the decision was made to build the domain foundation directly inside the existing, proven `app` module namespace (`io.github.adityaacodes.echo`). This demonstrated the importance of prioritizing functional delivery over theoretical architectural isolation when build tooling becomes a significant blocker.
+*   **Kotlin Coroutines Integration:** Successfully mapped asynchronous concepts (like the `Authenticator`) to modern Kotlin primitives (`suspend fun`, `Result<T>`) rather than relying on legacy Java callbacks or RxJava. The use of `sealed class` hierarchies for `ConnectionState` and `EchoError` immediately provided a robust, type-safe API surface.
