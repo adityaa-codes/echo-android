@@ -41,7 +41,7 @@ internal class KtorEchoConnection(
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val _incomingFrames = MutableSharedFlow<PusherFrame>(extraBufferCapacity = 64)
+    private val _incomingFrames = MutableSharedFlow<PusherFrame>(extraBufferCapacity = 256)
     val incomingFrames = _incomingFrames.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null

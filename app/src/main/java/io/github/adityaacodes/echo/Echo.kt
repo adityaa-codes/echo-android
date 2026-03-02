@@ -5,8 +5,7 @@ import io.github.adityaacodes.echo.auth.Authenticator
 public object Echo {
     public fun create(block: EchoBuilder.() -> Unit): EchoClient {
         val builder = EchoBuilder().apply(block)
-        // Note: Actual implementation will be injected here later
-        throw NotImplementedError("Echo implementation is pending")
+        return io.github.adityaacodes.echo.internal.EchoClientImpl(builder)
     }
 }
 
