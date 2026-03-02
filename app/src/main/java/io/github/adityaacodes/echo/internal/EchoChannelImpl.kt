@@ -1,5 +1,6 @@
 package io.github.adityaacodes.echo.internal
 
+import io.github.adityaacodes.echo.auth.Authenticator
 import io.github.adityaacodes.echo.channel.EchoChannel
 import io.github.adityaacodes.echo.connection.KtorEchoConnection
 import io.github.adityaacodes.echo.data.protocol.GenericEvent
@@ -7,7 +8,10 @@ import io.github.adityaacodes.echo.data.protocol.PusherFrame
 import io.github.adityaacodes.echo.data.protocol.SubscribeCommand
 import io.github.adityaacodes.echo.data.protocol.SubscriptionSucceeded
 import io.github.adityaacodes.echo.data.protocol.UnsubscribeCommand
+import io.github.adityaacodes.echo.data.protocol.WhisperCommand
+import io.github.adityaacodes.echo.error.EchoError
 import io.github.adityaacodes.echo.state.ChannelState
+import io.github.adityaacodes.echo.state.ConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -15,9 +19,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 internal class EchoChannelImpl(
     override val name: String,
@@ -25,6 +33,7 @@ internal class EchoChannelImpl(
     private val eventRouter: EventRouter,
     private val scope: CoroutineScope,
     private val json: Json,
+    private val authenticator: Authenticator?,
     private val onLeave: (String) -> Unit
 ) : EchoChannel {
 
@@ -52,8 +61,44 @@ internal class EchoChannelImpl(
                     }
             }
             
+            // Wait for connection to be established to get socketId
+            val connectedState = connection.state.filterIsInstance<ConnectionState.Connected>().first()
+            val socketId = connectedState.socketId
+
+            var authSignature: String? = null
+            var channelData: String? = null
+
+            if (name.startsWith("private-") || name.startsWith("presence-")) {
+                if (authenticator == null) {
+                    _state.value = ChannelState.Failed(EchoError.Auth(400, "No authenticator provided"))
+                    return@launch
+                }
+                
+                val result = authenticator.authenticate(socketId, name)
+                if (result.isFailure) {
+                    val ex = result.exceptionOrNull()
+                    val authError = if (ex is EchoError.Auth) ex else EchoError.Auth(-1, ex?.message ?: "Unknown auth error")
+                    _state.value = ChannelState.Failed(authError)
+                    return@launch
+                } else {
+                    val jsonResponse = result.getOrNull() ?: ""
+                    try {
+                        val element = json.parseToJsonElement(jsonResponse).jsonObject
+                        authSignature = element["auth"]?.jsonPrimitive?.content
+                        channelData = element["channel_data"]?.jsonPrimitive?.content
+                    } catch (e: Exception) {
+                        _state.value = ChannelState.Failed(EchoError.Auth(-1, "Invalid auth response format"))
+                        return@launch
+                    }
+                }
+            }
+
             // Send subscribe command
-            val command = SubscribeCommand(data = SubscribeCommand.SubscribeData(channel = name))
+            val command = SubscribeCommand(data = SubscribeCommand.SubscribeData(
+                channel = name,
+                auth = authSignature,
+                channel_data = channelData
+            ))
             val jsonString = json.encodeToString(PusherFrame.serializer(), command)
             connection.sendRaw(jsonString)
         }
@@ -72,11 +117,27 @@ internal class EchoChannelImpl(
     }
 
     override suspend fun whisper(event: String, data: String): Result<Unit> {
-        return Result.failure(NotImplementedError("Whisper not implemented for public channels"))
+        if (!name.startsWith("private-") && !name.startsWith("presence-")) {
+            return Result.failure(IllegalStateException("Whisper not allowed for public channels"))
+        }
+        val eventName = if (event.startsWith("client-")) event else "client-$event"
+        val element = try {
+            json.parseToJsonElement(data)
+        } catch (e: Exception) {
+            JsonPrimitive(data)
+        }
+        val command = WhisperCommand(
+            event = eventName,
+            channel = name,
+            data = element
+        )
+        val jsonString = json.encodeToString(PusherFrame.serializer(), command)
+        return connection.sendRaw(jsonString)
     }
 
     override fun listenForWhisper(event: String): Flow<String> {
-        throw NotImplementedError("Whisper listening not implemented")
+        val eventName = if (event.startsWith("client-")) event else "client-$event"
+        return listen(eventName)
     }
 
     override fun leave() {
@@ -84,9 +145,12 @@ internal class EchoChannelImpl(
         _state.value = ChannelState.Unsubscribed
         
         scope.launch {
-            val command = UnsubscribeCommand(data = UnsubscribeCommand.UnsubscribeData(channel = name))
-            val jsonString = json.encodeToString(PusherFrame.serializer(), command)
-            connection.sendRaw(jsonString)
+            // Only send unsubscribe if we are connected
+            if (connection.state.value is ConnectionState.Connected) {
+                val command = UnsubscribeCommand(data = UnsubscribeCommand.UnsubscribeData(channel = name))
+                val jsonString = json.encodeToString(PusherFrame.serializer(), command)
+                connection.sendRaw(jsonString)
+            }
         }
         
         onLeave(name)

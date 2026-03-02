@@ -65,6 +65,7 @@ internal class EchoClientImpl(
                 eventRouter = eventRouter,
                 scope = scope,
                 json = json,
+                authenticator = builder.authConfig.authenticator,
                 onLeave = { leftChannelName ->
                     channels.remove(leftChannelName)
                 }
@@ -73,7 +74,8 @@ internal class EchoClientImpl(
     }
 
     override fun private(name: String): EchoChannel {
-        throw NotImplementedError("Private channel subscriptions not implemented yet (Phase 7)")
+        val channelName = if (name.startsWith("private-")) name else "private-$name"
+        return channel(channelName)
     }
 
     override fun join(name: String): PresenceChannel {

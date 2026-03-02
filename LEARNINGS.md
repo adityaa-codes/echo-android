@@ -25,3 +25,8 @@ This document captures the key technical decisions, architectural patterns, and 
 ## Phase 6: Public Channel Subscriptions
 - **Thread-Safe Caching:** Used `ConcurrentHashMap` within `EchoClientImpl` to safely cache and retrieve active `EchoChannelImpl` instances across multiple concurrent subscription requests.
 - **Testing Coroutine Flows:** Learned that when testing state transitions and mock verifications with Turbine and MockK, explicit calls to `runCurrent()` (from `kotlinx.coroutines.test`) are required to advance the virtual time and allow background `launch` blocks to execute before asserting.
+
+## Phase 7: Authentication & Private Channels
+- **Pre-flight Suspending Authentication:** Modified the `EchoChannelImpl.subscribe()` flow to wait for the `ConnectionState.Connected` state using `.first()`, allowing us to extract the `socketId`. This `socketId` and channel name are then passed to the user-provided `Authenticator` interface to fetch the signature asynchronously before sending the `pusher:subscribe` JSON payload.
+- **Graceful Failure Handling:** Designed the subscription process to transition the channel state to `ChannelState.Failed(EchoError.Auth)` if authentication fails, ensuring the main WebSocket connection remains uninterrupted.
+- **Client Events (Whispering):** Added `whisper` and `listenForWhisper` implementations that are guarded to only allow outgoing client events on `private-*` and `presence-*` channels.
