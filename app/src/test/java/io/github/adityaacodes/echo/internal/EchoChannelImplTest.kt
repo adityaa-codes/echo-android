@@ -183,4 +183,59 @@ class EchoChannelImplTest {
             })
         }
     }
+
+    @Test
+    fun `channel auto-resubscribes when connection drops and reconnects`() = runTest {
+        val connection = mockk<KtorEchoConnection>()
+        val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected("socket-1"))
+        every { connection.state } returns connectionState
+        coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+
+        val incomingFrames = MutableSharedFlow<PusherFrame>()
+        val router = EventRouter(incomingFrames)
+
+        val channel = EchoChannelImpl(
+            name = "my-channel",
+            connection = connection,
+            eventRouter = router,
+            scope = backgroundScope,
+            json = json,
+            authenticator = null,
+            onLeave = {}
+        )
+
+        runCurrent()
+        
+        channel.state.test {
+            assertTrue(awaitItem() is ChannelState.Subscribing)
+            
+            // First subscribe
+            coVerify(exactly = 1) { connection.sendRaw(match { it.contains("pusher:subscribe") }) }
+            
+            incomingFrames.emit(SubscriptionSucceeded("my-channel"))
+            runCurrent()
+            
+            assertTrue(awaitItem() is ChannelState.Subscribed)
+            
+            // Connection drops
+            connectionState.value = ConnectionState.Disconnected(null)
+            runCurrent()
+            
+            assertTrue(awaitItem() is ChannelState.Subscribing)
+            
+            // Reconnects with new socketId
+            connectionState.value = ConnectionState.Connected("socket-2")
+            runCurrent()
+            
+            // Should send subscribe command again
+            coVerify(exactly = 2) { connection.sendRaw(match { it.contains("pusher:subscribe") }) }
+            
+            incomingFrames.emit(SubscriptionSucceeded("my-channel"))
+            runCurrent()
+            
+            assertTrue(awaitItem() is ChannelState.Subscribed)
+            
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

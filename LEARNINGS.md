@@ -35,3 +35,8 @@ This document captures the key technical decisions, architectural patterns, and 
 - **Composition over Inheritance:** Used Kotlin's interface delegation (`by delegate`) in `PresenceChannelImpl` to wrap the `EchoChannelImpl` logic. This avoids polluting standard channels with presence logic and avoids making classes `open` needlessly.
 - **JSON Flexibility:** Updated the `Member` interface to expose `info` as `JsonElement` instead of a flat `Map`, better handling nested user details returned from backend authenticators.
 - **Reactive Member Lists:** Maintained a private `MutableStateFlow<List<Member>>` that immediately updates upon `SubscriptionSucceeded` (initial roster), `MemberAdded`, and `MemberRemoved` internal Pusher frames.
+
+## Phase 9: State Synchronization & Auto-Resubscribe
+- **Implicit Re-subscription:** Instead of `EchoClientImpl` orchestrating re-subscriptions externally, we encapsulated a `connectionStateJob` within `EchoChannelImpl`. By collecting `connection.state`, each channel natively re-subscribes itself (and re-fetches auth tokens) whenever the core socket transitions to `Connected`.
+- **Deduplication:** Maintained `ConcurrentHashMap.getOrPut()` inside `EchoClientImpl` which implicitly deduplicates channel requests without needing extra locking logic.
+- **Cleanup:** Ensured that `connectionStateJob` is properly canceled in `EchoChannelImpl.leave()` so that unsubscribed channels do not accidentally resurrect themselves upon subsequent network reconnections.

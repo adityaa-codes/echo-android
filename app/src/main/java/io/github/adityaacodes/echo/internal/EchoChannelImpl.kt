@@ -41,30 +41,54 @@ internal class EchoChannelImpl(
     override val state: StateFlow<ChannelState> = _state.asStateFlow()
 
     private var subscriptionJob: Job? = null
+    private var connectionStateJob: Job? = null
 
     init {
-        subscribe()
+        // Listen for subscription succeeded
+        scope.launch {
+            eventRouter.channelEvents(name)
+                .filterIsInstance<SubscriptionSucceeded>()
+                .collect {
+                    _state.value = ChannelState.Subscribed
+                }
+        }
+
+        connectionStateJob = scope.launch {
+            connection.state.collect { connState ->
+                when (connState) {
+                    is ConnectionState.Connected -> {
+                        doSubscribe(connState.socketId)
+                    }
+                    is ConnectionState.Disconnected, is ConnectionState.Reconnecting -> {
+                        if (_state.value is ChannelState.Subscribed) {
+                            _state.value = ChannelState.Subscribing
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     internal fun subscribe() {
-        if (_state.value is ChannelState.Subscribed || _state.value is ChannelState.Subscribing) return
-        
+        // We trigger a forced resubscribe only if the user somehow manually requested it, 
+        // but typically the connectionStateJob handles it.
+        // To be safe, if we are already connected, we can try to subscribe immediately.
+        val currentState = connection.state.value
+        if (currentState is ConnectionState.Connected) {
+            doSubscribe(currentState.socketId)
+        } else {
+            _state.value = ChannelState.Subscribing
+        }
+    }
+
+    private fun doSubscribe(socketId: String) {
+        // If we are already subscribed and the socket hasn't changed (though it usually does on reconnect),
+        // we might not want to resubscribe. But if this is called, it means we connected/reconnected.
         _state.value = ChannelState.Subscribing
         
+        subscriptionJob?.cancel()
         subscriptionJob = scope.launch {
-            // Listen for subscription succeeded
-            launch {
-                eventRouter.channelEvents(name)
-                    .filterIsInstance<SubscriptionSucceeded>()
-                    .collect {
-                        _state.value = ChannelState.Subscribed
-                    }
-            }
-            
-            // Wait for connection to be established to get socketId
-            val connectedState = connection.state.filterIsInstance<ConnectionState.Connected>().first()
-            val socketId = connectedState.socketId
-
             var authSignature: String? = null
             var channelData: String? = null
 
@@ -142,6 +166,7 @@ internal class EchoChannelImpl(
 
     override fun leave() {
         subscriptionJob?.cancel()
+        connectionStateJob?.cancel()
         _state.value = ChannelState.Unsubscribed
         
         scope.launch {
