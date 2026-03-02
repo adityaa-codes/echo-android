@@ -67,5 +67,11 @@ Implementing a robust engine using Ktor WebSockets ensures non-blocking I/O and 
 ---
 
 ## 9. Milestones & Timeline
-*   **M1 (Implementation):** TBD
+*   **M1 (Implementation):** Completed (2026-03-02)
 *   **M2 (Review & QA):** TBD
+
+---
+
+## 10. Learnings & Retrospective (Phase 3)
+*   **Ktor WebSocket Testing:** Ktor's `MockEngine` is excellent for standard HTTP requests, but mocking the full lifecycle of a `DefaultClientWebSocketSession` (including bidirectional frames) purely through the HTTP engine is complex.
+*   **Resolution:** Instead of fighting the mock engine for pure WebSocket stream testing, the `KtorEchoConnection` was refactored slightly to make the frame parsing logic (`handleRawText`) `internal`. This allowed the tests to directly verify the JSON parsing and state machine transitions (`Connecting` -> `Connected` with socket ID) deterministically using `Turbine` without brittle network mocks.
