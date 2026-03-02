@@ -42,7 +42,15 @@ dependencies {
     implementation(libs.material)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.websockets)
+
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockk)
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
