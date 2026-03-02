@@ -26,7 +26,7 @@ class KtorEchoConnectionTest {
             install(WebSockets)
         }
         
-        val connection = KtorEchoConnection(client, "ws://localhost", scope = this)
+        val connection = KtorEchoConnection(client, "ws://localhost", scope = backgroundScope)
 
         connection.state.test {
             val initialState = awaitItem()
@@ -37,8 +37,9 @@ class KtorEchoConnectionTest {
             val connectingState = awaitItem()
             assertTrue(connectingState is ConnectionState.Connecting)
             
-            val errorState = awaitItem()
-            assertTrue(errorState is ConnectionState.Disconnected)
+            val reconnectingState = awaitItem()
+            println("State after connecting: $reconnectingState")
+            assertTrue("Expected Disconnected due to network error, but was $reconnectingState", reconnectingState is ConnectionState.Disconnected)
             
             cancelAndIgnoreRemainingEvents()
         }

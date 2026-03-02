@@ -7,6 +7,7 @@ import io.github.adityaacodes.echo.data.protocol.Pong
 import io.github.adityaacodes.echo.data.protocol.PusherFrame
 import io.github.adityaacodes.echo.error.EchoError
 import io.github.adityaacodes.echo.state.ConnectionState
+import io.github.adityaacodes.echo.utils.BackoffStrategy
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocketSession
@@ -18,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,16 +46,29 @@ internal class KtorEchoConnection(
 
     private var session: DefaultClientWebSocketSession? = null
     private var connectionJob: Job? = null
+    
+    // Add a flag to distinguish between user-requested disconnects and network drops
+    private var isUserDisconnected = false
 
     override suspend fun connect() {
-        if (_state.value !is ConnectionState.Disconnected && _state.value !is ConnectionState.Reconnecting) {
+        isUserDisconnected = false
+        connectInternal(attempt = 1)
+    }
+
+    private fun connectInternal(attempt: Int) {
+        if (_state.value is ConnectionState.Connected) {
             return
         }
 
-        _state.value = ConnectionState.Connecting
-
         connectionJob?.cancel()
         connectionJob = scope.launch {
+            if (attempt == 1) {
+                _state.value = ConnectionState.Connecting
+            } else {
+                _state.value = ConnectionState.Reconnecting(attempt)
+                delay(BackoffStrategy.calculateDelay(attempt))
+            }
+
             try {
                 session = client.webSocketSession {
                     url(this@KtorEchoConnection.url)
@@ -67,11 +82,17 @@ internal class KtorEchoConnection(
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                _state.value = ConnectionState.Disconnected(EchoError.Network(e))
+                
                 session?.close()
                 session = null
+
+                if (!isUserDisconnected) {
+                    _state.value = ConnectionState.Disconnected(EchoError.Network(e))
+                    // Start reconnection loop
+                    connectInternal(attempt + 1)
+                }
             } finally {
-                if (_state.value !is ConnectionState.Disconnected) {
+                if (isUserDisconnected && _state.value !is ConnectionState.Disconnected) {
                     _state.value = ConnectionState.Disconnected()
                 }
             }
@@ -130,6 +151,7 @@ internal class KtorEchoConnection(
     }
 
     override suspend fun disconnect() {
+        isUserDisconnected = true
         _state.value = ConnectionState.Disconnected()
         session?.close()
         session = null
