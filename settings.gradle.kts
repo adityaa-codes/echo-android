@@ -23,5 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Echo Android"
-include(":app")
+include(":core")
+include(":sample")
  
