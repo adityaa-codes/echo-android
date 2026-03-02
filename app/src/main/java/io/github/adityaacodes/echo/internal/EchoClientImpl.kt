@@ -16,12 +16,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.Json
+import java.util.concurrent.ConcurrentHashMap
 
 internal class EchoClientImpl(
     private val builder: EchoBuilder
 ) : EchoClient {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val json = Json { ignoreUnknownKeys = true }
+    private val channels = ConcurrentHashMap<String, EchoChannelImpl>()
 
     private val httpClient = HttpClient(OkHttp) {
         install(WebSockets) {
@@ -39,7 +43,7 @@ internal class EchoClientImpl(
         }
     }
 
-    private val connection: KtorEchoConnection = KtorEchoConnection(httpClient, url, scope = scope)
+    private val connection: KtorEchoConnection = KtorEchoConnection(httpClient, url, json = json, scope = scope)
     private val eventRouter = EventRouter(connection.incomingFrames)
 
     override val globalEvents: Flow<EchoEvent> = eventRouter.globalEvents
@@ -54,7 +58,18 @@ internal class EchoClientImpl(
     }
 
     override fun channel(name: String): EchoChannel {
-        throw NotImplementedError("Channel subscriptions not implemented yet (Phase 6)")
+        return channels.getOrPut(name) {
+            EchoChannelImpl(
+                name = name,
+                connection = connection,
+                eventRouter = eventRouter,
+                scope = scope,
+                json = json,
+                onLeave = { leftChannelName ->
+                    channels.remove(leftChannelName)
+                }
+            )
+        }
     }
 
     override fun private(name: String): EchoChannel {
@@ -66,6 +81,6 @@ internal class EchoClientImpl(
     }
 
     override fun leave(name: String) {
-        throw NotImplementedError("Channel leaving not implemented yet")
+        channels[name]?.leave()
     }
 }
