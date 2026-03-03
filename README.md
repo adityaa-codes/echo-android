@@ -59,38 +59,66 @@ Built for [Laravel Reverb](https://reverb.laravel.com) and any Pusher Channelsâ€
 
 ## Installation
 
-> **Note:** The SDK is currently distributed as a local module. Maven Central publishing is planned.
+### Maven Central
+
+Add the dependency in your app's `build.gradle.kts`:
+
+```kotlin
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.github.adityaa-codes:echo:0.1.0")
+}
+```
+
+To check the latest published version on Maven Central:
+
+```bash
+curl -s https://repo1.maven.org/maven2/io/github/adityaa-codes/echo/maven-metadata.xml
+```
+
+Look at `<latest>` / `<release>` in the response and use that version.
 
 ### Local Module
 
 1. Clone the repository:
 
-   ```bash
-   git clone https://github.com/adityaacodes/echo-android.git
-   ```
+```bash
+git clone https://github.com/adityaacodes/echo-android.git
+```
 
 2. Include the `:core` module in your project's `settings.gradle.kts`:
 
-   ```kotlin
-   include(":core")
-   project(":core").projectDir = file("../echo-android/core")
-   ```
+```kotlin
+include(":core")
+project(":core").projectDir = file("../echo-android/core")
+```
 
 3. Add the dependency in your app's `build.gradle.kts`:
 
-   ```kotlin
-   dependencies {
-       implementation(project(":core"))
-   }
-   ```
-
-### Maven Central (Coming Soon)
-
 ```kotlin
 dependencies {
-    implementation("io.github.adityaacodes:echo:<version>")
+    implementation(project(":core"))
 }
 ```
+
+For local publishing credentials/signing, use user-level `~/.gradle/gradle.properties` (never commit secrets in project `gradle.properties`):
+
+```properties
+mavenCentralUsername=YOUR_CENTRAL_TOKEN_USERNAME
+mavenCentralPassword=YOUR_CENTRAL_TOKEN_PASSWORD
+signing.keyId=YOUR_GPG_KEY_ID
+signing.password=YOUR_GPG_KEY_PASSPHRASE
+signing.secretKey=-----BEGIN PGP PRIVATE KEY BLOCK-----...
+```
+
+> If your release deployment in Sonatype shows `PUBLISHING`, wait for Maven Central indexing (typically several minutes, sometimes longer).
+
+For release automation (`.github/workflows/publish-release.yml`), configure these repository secrets:
+`MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY_ID`, `SIGNING_PASSWORD`, `SIGNING_SECRET_KEY`.
 
 ---
 
