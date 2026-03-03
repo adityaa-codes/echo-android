@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.ktlint)
     alias(libs.plugins.vanniktech.maven.publish)
     id("jacoco")
+    signing
 }
 
 group = "io.github.adityaa-codes"
@@ -94,6 +95,14 @@ mavenPublishing {
             developerConnection.set("scm:git:ssh://git@github.com/adityaacodes/echo-android.git")
             url.set("https://github.com/adityaacodes/echo-android")
         }
+    }
+}
+
+// CI: sign via system GPG keyring (imported by ghaction-import-gpg).
+// Local: vanniktech uses signingInMemoryKey from ~/.gradle/gradle.properties.
+signing {
+    if (providers.gradleProperty("signingInMemoryKey").orNull == null) {
+        useGpgCmd()
     }
 }
 
