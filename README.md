@@ -185,6 +185,12 @@ val echo = Echo.create {
         enabled = true                     // Enable SDK logging (default: false)
         logger = { msg -> Log.d("Echo", msg) } // Optional: custom logger
     }
+
+    reconnection {
+        maxAttempts = 10                   // Default: 10 attempts
+        baseDelayMs = 1_000                // Default: 1 second
+        maxDelayMs = 30_000                // Default: 30 seconds
+    }
 }
 ```
 
@@ -352,6 +358,8 @@ ECHO_SAMPLE_USE_TLS=false
 ECHO_SAMPLE_APP_KEY=your-app-key
 ECHO_SAMPLE_AUTH_ENDPOINT=http://your-host/broadcasting/auth
 ```
+
+> Tip: In the sample UI, provide host without scheme (for example `staging.example.com`), then toggle TLS based on your endpoint.
 
 ---
 
