@@ -1,3 +1,0 @@
-io.github.adityaacodes.echo.sample
-string app_name
-style Theme_EchoAndroid
