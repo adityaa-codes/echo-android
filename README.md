@@ -41,6 +41,7 @@ Built for [Laravel Reverb](https://reverb.laravel.com) and any Pusher Channelsâ€
 - [Sample App](#sample-app)
 - [Testing](#testing)
 - [Contributing](#contributing)
+- [Roadmap](ROADMAP.md)
 - [License](#license)
 
 ---
