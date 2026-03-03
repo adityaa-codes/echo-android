@@ -36,23 +36,11 @@ jobs:
           fi
           echo "VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Write signing secrets to Gradle properties
-        env:
-          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-          SIGNING_SECRET_KEY: ${{ secrets.SIGNING_SECRET_KEY }}
-        run: |
-          mkdir -p ~/.gradle
-          python3 - <<'PYEOF'
-          import os
-          props_path = os.path.expanduser("~/.gradle/gradle.properties")
-          with open(props_path, "a") as f:
-              f.write(f"signing.keyId={os.environ['SIGNING_KEY_ID']}\n")
-              f.write(f"signing.password={os.environ['SIGNING_PASSWORD']}\n")
-              f.write(f"signing.secretKey={os.environ['SIGNING_SECRET_KEY']}\n")
-          PYEOF
-
       - name: Publish signed artifacts to Sonatype staging API
+        env:
+          ORG_GRADLE_PROJECT_signing.keyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signing.password: ${{ secrets.SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_signing.secretKey: ${{ secrets.SIGNING_SECRET_KEY }}
         run: >
           ./gradlew :core:publishReleasePublicationToSonatypeRepository
           -PVERSION_NAME="$VERSION_NAME"
