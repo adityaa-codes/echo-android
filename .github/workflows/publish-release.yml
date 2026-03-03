@@ -3,6 +3,11 @@ name: Publish library on release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.0.0)"
+        required: true
 
 jobs:
   publish:
@@ -20,11 +25,15 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Derive version from tag
+      - name: Derive version from tag or input
         shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          VERSION="${TAG#v}"
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          fi
           echo "VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
 
       - name: Write signing secrets to Gradle properties
