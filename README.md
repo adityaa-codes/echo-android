@@ -70,7 +70,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.adityaa-codes:echo:0.1.0")
+    implementation("io.github.adityaa-codes:echo:<latest-version>")
 }
 ```
 
