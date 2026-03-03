@@ -1,5 +1,6 @@
 package io.github.adityaacodes.echo.sample.ui
 
+import io.github.adityaacodes.echo.sample.BuildConfig
 import io.github.adityaacodes.echo.state.ChannelState
 import io.github.adityaacodes.echo.state.ConnectionState
 
@@ -39,11 +40,11 @@ data class MainViewState(
 
 sealed interface MainViewIntent {
     data class Connect(
-        val host: String,
-        val port: Int?,
-        val useTls: Boolean,
-        val appKey: String,
-        val authEndpoint: String = "",
+        val host: String = BuildConfig.ECHO_SAMPLE_HOST,
+        val port: Int? = BuildConfig.ECHO_SAMPLE_PORT,
+        val useTls: Boolean = BuildConfig.ECHO_SAMPLE_USE_TLS,
+        val appKey: String = BuildConfig.ECHO_SAMPLE_APP_KEY,
+        val authEndpoint: String = BuildConfig.ECHO_SAMPLE_AUTH_ENDPOINT,
         val bearerToken: String = "",
     ) : MainViewIntent
 

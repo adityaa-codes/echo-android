@@ -343,6 +343,16 @@ Run it:
 ./gradlew :sample:installDebug
 ```
 
+For local, non-committed sample credentials, set Gradle properties in `~/.gradle/gradle.properties`:
+
+```properties
+ECHO_SAMPLE_HOST=your-host
+ECHO_SAMPLE_PORT=8080
+ECHO_SAMPLE_USE_TLS=false
+ECHO_SAMPLE_APP_KEY=your-app-key
+ECHO_SAMPLE_AUTH_ENDPOINT=http://your-host/broadcasting/auth
+```
+
 ---
 
 ## Testing

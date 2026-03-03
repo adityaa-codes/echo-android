@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -227,16 +228,16 @@ private fun StatusRow(label: String, value: String) {
 
 @Composable
 fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
-    var hostInput by remember { mutableStateOf("10.0.2.2") }
-    var portInput by remember { mutableStateOf("8080") }
-    var keyInput by remember { mutableStateOf("reverb-app-key") }
-    var useTls by remember { mutableStateOf(false) }
-    var authEndpoint by remember { mutableStateOf("") }
+    var hostInput by remember { mutableStateOf(BuildConfig.ECHO_SAMPLE_HOST) }
+    var portInput by remember { mutableStateOf(BuildConfig.ECHO_SAMPLE_PORT.toString()) }
+    var keyInput by remember { mutableStateOf(BuildConfig.ECHO_SAMPLE_APP_KEY) }
+    var useTls by remember { mutableStateOf(BuildConfig.ECHO_SAMPLE_USE_TLS) }
+    var authEndpoint by remember { mutableStateOf(BuildConfig.ECHO_SAMPLE_AUTH_ENDPOINT) }
     var bearerToken by remember { mutableStateOf("") }
     var showAuth by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Server Configuration", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
@@ -244,7 +245,9 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
                 onValueChange = { hostInput = it },
                 label = { Text("Host") },
                 placeholder = { Text("10.0.2.2") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
                 singleLine = true,
             )
 
@@ -253,14 +256,18 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
                     value = portInput,
                     onValueChange = { portInput = it },
                     label = { Text("Port") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = keyInput,
                     onValueChange = { keyInput = it },
                     label = { Text("App Key") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
                     singleLine = true,
                 )
             }
@@ -288,14 +295,18 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
                         onValueChange = { authEndpoint = it },
                         label = { Text("Auth Endpoint URL") },
                         placeholder = { Text("http://10.0.2.2:8000/broadcasting/auth") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
                         singleLine = true,
                     )
                     OutlinedTextField(
                         value = bearerToken,
                         onValueChange = { bearerToken = it },
                         label = { Text("Bearer Token (optional)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
                         singleLine = true,
                     )
                 }
@@ -303,7 +314,7 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 androidx.compose.material3.Button(
                     onClick = {
@@ -364,7 +375,9 @@ fun ChannelSubscriptionSection(state: MainViewState, onIntent: (MainViewIntent) 
                     value = channelInput,
                     onValueChange = { channelInput = it },
                     label = { Text("Channel Name") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
                     singleLine = true,
                     supportingText = {
                         val prefix = when (selectedType) {
@@ -523,7 +536,9 @@ fun EventListenerSection(state: MainViewState, onIntent: (MainViewIntent) -> Uni
                         onValueChange = { eventName = it },
                         label = { Text("Event Name") },
                         placeholder = { Text("MessageSent") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
                         singleLine = true,
                     )
                     OutlinedButton(
@@ -550,14 +565,18 @@ fun EventListenerSection(state: MainViewState, onIntent: (MainViewIntent) -> Uni
                         onValueChange = { whisperEvent = it },
                         label = { Text("Event") },
                         placeholder = { Text("typing") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
                         singleLine = true,
                     )
                     OutlinedTextField(
                         value = whisperData,
                         onValueChange = { whisperData = it },
                         label = { Text("Data (JSON)") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
                         singleLine = true,
                     )
                 }

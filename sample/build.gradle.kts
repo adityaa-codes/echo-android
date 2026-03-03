@@ -4,11 +4,23 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
+private fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "io.github.adityaacodes.echo.sample"
     compileSdk = 36
 
     defaultConfig {
+        val sampleHost = providers.gradleProperty("ECHO_SAMPLE_HOST").orElse("10.0.2.2").get()
+        val samplePort = providers.gradleProperty("ECHO_SAMPLE_PORT").orElse("8080").get()
+        val sampleUseTls = providers.gradleProperty("ECHO_SAMPLE_USE_TLS").orElse("false").get()
+        val sampleAppKey = providers.gradleProperty("ECHO_SAMPLE_APP_KEY").orElse("reverb-app-key").get()
+        val sampleAuthEndpoint =
+            providers.gradleProperty("ECHO_SAMPLE_AUTH_ENDPOINT")
+                .orElse("http://10.0.2.2:8000/broadcasting/auth")
+                .get()
+
         applicationId = "io.github.adityaacodes.echo.sample"
         minSdk = 30
         targetSdk = 36
@@ -19,6 +31,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("String", "ECHO_SAMPLE_HOST", sampleHost.asBuildConfigString())
+        buildConfigField("int", "ECHO_SAMPLE_PORT", samplePort)
+        buildConfigField("boolean", "ECHO_SAMPLE_USE_TLS", sampleUseTls)
+        buildConfigField("String", "ECHO_SAMPLE_APP_KEY", sampleAppKey.asBuildConfigString())
+        buildConfigField("String", "ECHO_SAMPLE_AUTH_ENDPOINT", sampleAuthEndpoint.asBuildConfigString())
     }
 
     buildTypes {
@@ -42,6 +59,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }

@@ -136,7 +136,9 @@ class MainViewModel : ViewModel() {
     }
 
     private fun connect(config: MainViewIntent.Connect) {
-        if (config.host.isBlank() || config.appKey.isBlank()) {
+        val normalizedHost = config.host.normalizeHostInput()
+
+        if (normalizedHost.isBlank() || config.appKey.isBlank()) {
             toast("Host and App Key are required")
             return
         }
@@ -149,7 +151,7 @@ class MainViewModel : ViewModel() {
 
                 echoClient = Echo.create {
                     client {
-                        host = config.host
+                        host = normalizedHost
                         port = config.port
                         useTls = config.useTls
                         apiKey = config.appKey
@@ -197,12 +199,12 @@ class MainViewModel : ViewModel() {
                 val portSuffix = config.port?.let { ":$it" } ?: ""
                 _viewState.update {
                     it.copy(
-                        connectedUrl = "$scheme://${config.host}$portSuffix",
+                        connectedUrl = "$scheme://$normalizedHost$portSuffix",
                         lastPingSuccessful = null,
                     )
                 }
             } catch (e: Exception) {
-                toast("Connection failed: ${e.message}")
+                toast("Connection failed (${e::class.simpleName}): ${e.message}")
             }
         }
     }
@@ -317,4 +319,14 @@ class MainViewModel : ViewModel() {
             }
         }
     }
+}
+
+private fun String.normalizeHostInput(): String {
+    return this
+        .trim()
+        .removePrefix("ws://")
+        .removePrefix("wss://")
+        .removePrefix("http://")
+        .removePrefix("https://")
+        .substringBefore("/")
 }
