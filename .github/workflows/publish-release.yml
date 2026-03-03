@@ -1,0 +1,47 @@
+name: Publish library on release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Derive version from tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          echo "VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publish signed artifacts to Sonatype staging API
+        run: >
+          ./gradlew :core:publishReleasePublicationToSonatypeRepository
+          -PVERSION_NAME="$VERSION_NAME"
+          -PmavenCentralUsername="${{ secrets.MAVEN_CENTRAL_USERNAME }}"
+          -PmavenCentralPassword="${{ secrets.MAVEN_CENTRAL_PASSWORD }}"
+          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
+          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
+          -Psigning.secretKey="${{ secrets.SIGNING_SECRET_KEY }}"
+          --no-daemon
+
+      - name: Promote deployment to Central Portal
+        shell: bash
+        run: |
+          AUTH=$(printf "%s:%s" "${{ secrets.MAVEN_CENTRAL_USERNAME }}" "${{ secrets.MAVEN_CENTRAL_PASSWORD }}" | base64 | tr -d '\n')
+          curl --fail-with-body -X POST \
+            -H "Authorization: Bearer ${AUTH}" \
+            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/io.github.adityaa-codes?publishing_type=automatic"
