@@ -3,9 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.dokka)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.vanniktech.maven.publish)
     id("jacoco")
-    `maven-publish`
-    signing
 }
 
 group = "io.github.adityaa-codes"
@@ -33,9 +32,6 @@ android {
         debug {
             enableUnitTestCoverage = true
         }
-    }
-    publishing {
-        singleVariant("release")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -71,83 +67,33 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 }
 
-val androidSourcesJar =
-    tasks.register<Jar>("androidSourcesJar") {
-        archiveClassifier.set("sources")
-        from(android.sourceSets["main"].java.srcDirs)
-        from("src/main/kotlin")
-    }
+mavenPublishing {
+    publishToMavenCentral(automaticRelease = true)
+    signAllPublications()
 
-val javadocJar =
-    tasks.register<Jar>("javadocJar") {
-        dependsOn("dokkaGenerateHtml")
-        archiveClassifier.set("javadoc")
-        from(layout.buildDirectory.dir("dokka/html"))
-    }
+    coordinates("io.github.adityaa-codes", "echo", version.toString())
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            artifactId = "echo"
-
-            artifact(androidSourcesJar.get())
-            artifact(javadocJar.get())
-
-            pom {
-                name.set("Echo Kotlin SDK")
-                description.set("A robust, type-safe, and idiomatic Kotlin client for Pusher-compatible WebSocket services.")
-                url.set("https://github.com/adityaacodes/echo-android")
-                licenses {
-                    license {
-                        name.set("MIT License")
-                        url.set("https://opensource.org/license/mit")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("adityaacodes")
-                        name.set("Aditya A")
-                    }
-                }
-                scm {
-                    connection.set("scm:git:git://github.com/adityaacodes/echo-android.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/adityaacodes/echo-android.git")
-                    url.set("https://github.com/adityaacodes/echo-android")
-                }
+    pom {
+        name.set("Echo Kotlin SDK")
+        description.set("A robust, type-safe, and idiomatic Kotlin client for Pusher-compatible WebSocket services.")
+        url.set("https://github.com/adityaacodes/echo-android")
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://opensource.org/license/mit")
             }
         }
-    }
-    repositories {
-        maven {
-            name = "sonatype"
-            url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
-            credentials {
-                username = providers.gradleProperty("mavenCentralUsername").orNull
-                password = providers.gradleProperty("mavenCentralPassword").orNull
+        developers {
+            developer {
+                id.set("adityaacodes")
+                name.set("Aditya A")
             }
         }
-    }
-}
-
-afterEvaluate {
-    publishing {
-        publications.named<MavenPublication>("release") {
-            from(components["release"])
+        scm {
+            connection.set("scm:git:git://github.com/adityaacodes/echo-android.git")
+            developerConnection.set("scm:git:ssh://git@github.com/adityaacodes/echo-android.git")
+            url.set("https://github.com/adityaacodes/echo-android")
         }
-    }
-}
-
-signing {
-    val keyId = providers.gradleProperty("signing.keyId").orNull
-    val password = providers.gradleProperty("signing.password").orNull
-    val inMemoryKey = providers.gradleProperty("signing.secretKey").orNull
-
-    if (keyId != null && password != null && inMemoryKey != null) {
-        useInMemoryPgpKeys(keyId, inMemoryKey, password)
-        sign(publishing.publications)
-    } else if (keyId != null) {
-        useGpgCmd()
-        sign(publishing.publications)
     }
 }
 

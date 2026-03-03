@@ -36,23 +36,15 @@ jobs:
           fi
           echo "VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Publish signed artifacts to Sonatype staging API
+      - name: Publish to Maven Central
         env:
-          ORG_GRADLE_PROJECT_signing.keyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signing.password: ${{ secrets.SIGNING_PASSWORD }}
-          ORG_GRADLE_PROJECT_signing.secretKey: ${{ secrets.SIGNING_SECRET_KEY }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_SECRET_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
         run: >
-          ./gradlew :core:publishReleasePublicationToSonatypeRepository
+          ./gradlew :core:publishAndReleaseToMavenCentral
           -PVERSION_NAME="$VERSION_NAME"
-          -PmavenCentralUsername="${{ secrets.MAVEN_CENTRAL_USERNAME }}"
-          -PmavenCentralPassword="${{ secrets.MAVEN_CENTRAL_PASSWORD }}"
           --no-daemon
-
-      - name: Promote deployment to Central Portal
-        shell: bash
-        run: |
-          AUTH=$(printf "%s:%s" "${{ secrets.MAVEN_CENTRAL_USERNAME }}" "${{ secrets.MAVEN_CENTRAL_PASSWORD }}" | base64 | tr -d '\n')
-          curl --fail-with-body -X POST \
-            -H "Authorization: Bearer ${AUTH}" \
-            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/io.github.adityaa-codes?publishing_type=automatic"
 
