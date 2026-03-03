@@ -4,7 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.adityaacodes.echo.Echo
 import io.github.adityaacodes.echo.EchoClient
+import io.github.adityaacodes.echo.auth.Authenticator
+import io.github.adityaacodes.echo.channel.EchoChannel
+import io.github.adityaacodes.echo.channel.PresenceChannel
 import io.github.adityaacodes.echo.state.ConnectionState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +18,11 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainViewModel : ViewModel() {
 
@@ -24,125 +33,288 @@ class MainViewModel : ViewModel() {
     val viewEffect: SharedFlow<MainViewEffect> = _viewEffect.asSharedFlow()
 
     private var echoClient: EchoClient? = null
+    private val channels = mutableMapOf<String, EchoChannel>()
+    private val presenceChannels = mutableMapOf<String, PresenceChannel>()
+    private val channelJobs = mutableMapOf<String, MutableList<Job>>()
     private var connectionStateJob: Job? = null
     private var errorStreamJob: Job? = null
+    private var globalEventsJob: Job? = null
+    private val eventIdCounter = AtomicInteger(0)
+    private val errorIdCounter = AtomicInteger(0)
 
     fun processIntent(intent: MainViewIntent) {
         when (intent) {
-            is MainViewIntent.Connect -> connect(intent.host, intent.port, intent.useTls, intent.appKey)
-            is MainViewIntent.Subscribe -> subscribe(intent.channelName)
+            is MainViewIntent.Connect -> connect(intent)
+            is MainViewIntent.SubscribeChannel -> subscribeChannel(intent.channelName, intent.type)
+            is MainViewIntent.LeaveChannel -> leaveChannel(intent.channelName)
+            is MainViewIntent.ListenEvent -> listenEvent(intent.channelName, intent.eventName)
+            is MainViewIntent.SendWhisper -> sendWhisper(intent.channelName, intent.event, intent.data)
             MainViewIntent.Ping -> pingServer()
             MainViewIntent.Disconnect -> disconnect()
+            MainViewIntent.ClearEventLog -> _viewState.update { it.copy(eventLog = emptyList()) }
+            MainViewIntent.ClearErrorLog -> _viewState.update { it.copy(errorLog = emptyList()) }
         }
     }
 
-    private fun subscribe(channelName: String) {
-        if (channelName.isBlank()) return
-        echoClient?.channel(channelName)
-        updateClientInfo()
-    }
-
-    private fun updateClientInfo() {
-        val client = echoClient ?: return
-        _viewState.update { 
-            it.copy(
-                socketId = client.socketId,
-                activeChannels = client.activeChannels.map { ch -> ch.name }
-            ) 
+    private fun subscribeChannel(name: String, type: ChannelType) {
+        if (name.isBlank()) return
+        val client = echoClient ?: run {
+            toast("Connect first")
+            return
         }
+
+        val channel: EchoChannel = when (type) {
+            ChannelType.PUBLIC -> client.channel(name)
+            ChannelType.PRIVATE -> client.private(name)
+            ChannelType.PRESENCE -> client.presence(name)
+        }
+
+        channels[channel.name] = channel
+        if (channel is PresenceChannel) {
+            presenceChannels[channel.name] = channel
+            observePresenceMembers(channel)
+        }
+        observeChannelState(channel)
+        refreshChannelList()
     }
 
-    private fun connect(host: String, port: Int?, useTls: Boolean, appKey: String) {
-        if (host.isBlank() || appKey.isBlank()) {
-            viewModelScope.launch {
-                _viewEffect.emit(MainViewEffect.ShowToast("Host and App Key cannot be empty"))
+    private fun observeChannelState(channel: EchoChannel) {
+        val job = viewModelScope.launch {
+            channel.state.collect { refreshChannelList() }
+        }
+        channelJobs.getOrPut(channel.name) { mutableListOf() }.add(job)
+    }
+
+    private fun observePresenceMembers(channel: PresenceChannel) {
+        val job = viewModelScope.launch {
+            channel.members.collect { members ->
+                _viewState.update { state ->
+                    state.copy(
+                        presenceMembers = state.presenceMembers +
+                            (channel.name to members.map { it.id }),
+                    )
+                }
             }
+        }
+        channelJobs.getOrPut(channel.name) { mutableListOf() }.add(job)
+    }
+
+    private fun leaveChannel(name: String) {
+        channels.remove(name)?.leave()
+        presenceChannels.remove(name)
+        channelJobs.remove(name)?.forEach { it.cancel() }
+        _viewState.update { it.copy(presenceMembers = it.presenceMembers - name) }
+        refreshChannelList()
+        toast("Left $name")
+    }
+
+    private fun listenEvent(channelName: String, eventName: String) {
+        val channel = channels[channelName] ?: run {
+            toast("Channel '$channelName' not found")
+            return
+        }
+        val job = viewModelScope.launch {
+            channel.listen(eventName).collect { data ->
+                appendEvent(channelName, eventName, data)
+            }
+        }
+        channelJobs.getOrPut(channelName) { mutableListOf() }.add(job)
+        toast("Listening for '$eventName' on $channelName")
+    }
+
+    private fun sendWhisper(channelName: String, event: String, data: String) {
+        val channel = channels[channelName] ?: run {
+            toast("Channel '$channelName' not found")
+            return
+        }
+        viewModelScope.launch {
+            channel.whisper(event, data).fold(
+                onSuccess = { toast("Whisper sent: client-$event") },
+                onFailure = { toast("Whisper failed: ${it.message}") },
+            )
+        }
+    }
+
+    private fun connect(config: MainViewIntent.Connect) {
+        if (config.host.isBlank() || config.appKey.isBlank()) {
+            toast("Host and App Key are required")
             return
         }
 
         viewModelScope.launch {
             try {
-                // We disconnect and recreate client to allow testing different configs
-                echoClient?.disconnect()
+                cleanupConnection()
+
+                val authenticator = createAuthenticator(config.authEndpoint, config.bearerToken)
+
                 echoClient = Echo.create {
                     client {
-                        this.host = host
-                        this.port = port
-                        this.useTls = useTls
-                        this.apiKey = appKey
+                        host = config.host
+                        port = config.port
+                        useTls = config.useTls
+                        apiKey = config.appKey
                     }
-                    logging {
-                        this.enabled = true
+                    auth {
+                        this.authenticator = authenticator
                     }
+                    logging { enabled = true }
                 }
 
-                // Observe connection state
-                connectionStateJob?.cancel()
-                errorStreamJob?.cancel()
                 connectionStateJob = launch {
                     echoClient?.state?.collect { state ->
-                        val errorMessage = if (state is ConnectionState.Disconnected && state.reason != null) {
-                            state.reason?.message ?: "Unknown error"
-                        } else null
-                        
-                        _viewState.update { 
-                            it.copy(
-                                connectionState = state,
-                                errorMessage = errorMessage ?: it.errorMessage
-                            ) 
+                        _viewState.update {
+                            it.copy(connectionState = state)
                         }
-                        updateClientInfo()
+                        refreshChannelList()
                     }
                 }
+
                 errorStreamJob = launch {
                     echoClient?.errors?.collect { error ->
-                        _viewEffect.emit(MainViewEffect.ShowToast("Echo error: ${error.message ?: "Unknown"}"))
-                        _viewState.update { it.copy(errorMessage = error.message ?: it.errorMessage) }
+                        val entry = ErrorLogEntry(
+                            id = errorIdCounter.incrementAndGet(),
+                            type = error::class.simpleName ?: "Unknown",
+                            message = error.message ?: "Unknown error",
+                        )
+                        _viewState.update { state ->
+                            state.copy(
+                                errorLog = (state.errorLog + entry).takeLast(MAX_LOG_SIZE),
+                            )
+                        }
+                        toast("Error: ${error.message}")
                     }
                 }
 
-                // Actually initiate connection
-                echoClient?.connect()
-                val url = "${if(useTls) "wss" else "ws"}://$host${if(port!=null) ":$port" else ""}"
-                _viewState.update { it.copy(connectedUrl = url, errorMessage = null, lastPingSuccessful = null) }
+                globalEventsJob = launch {
+                    echoClient?.globalEvents?.collect { event ->
+                        appendEvent(event.channel, event.event, event.data)
+                    }
+                }
 
+                echoClient?.connect()
+
+                val scheme = if (config.useTls) "wss" else "ws"
+                val portSuffix = config.port?.let { ":$it" } ?: ""
+                _viewState.update {
+                    it.copy(
+                        connectedUrl = "$scheme://${config.host}$portSuffix",
+                        lastPingSuccessful = null,
+                    )
+                }
             } catch (e: Exception) {
-                _viewState.update { it.copy(errorMessage = e.message) }
+                toast("Connection failed: ${e.message}")
             }
         }
     }
 
     private fun pingServer() {
         viewModelScope.launch {
-            val client = echoClient
-            if (client == null) {
-                _viewEffect.emit(MainViewEffect.ShowToast("Connect first"))
+            val client = echoClient ?: run {
+                toast("Connect first")
                 return@launch
             }
-
             val success = client.ping(timeoutMillis = 5000L)
             _viewState.update { it.copy(lastPingSuccessful = success) }
-            _viewEffect.emit(
-                MainViewEffect.ShowToast(
-                    if (success) "Ping successful" else "Ping timed out",
-                ),
-            )
+            toast(if (success) "Ping successful ✓" else "Ping timed out ✗")
         }
     }
 
     private fun disconnect() {
         viewModelScope.launch {
-            echoClient?.disconnect()
-            _viewState.update { it.copy(connectedUrl = "", lastPingSuccessful = null) }
+            cleanupConnection()
+            _viewState.update {
+                it.copy(
+                    connectedUrl = "",
+                    lastPingSuccessful = null,
+                    activeChannels = emptyList(),
+                    presenceMembers = emptyMap(),
+                )
+            }
         }
+    }
+
+    private suspend fun cleanupConnection() {
+        connectionStateJob?.cancel()
+        errorStreamJob?.cancel()
+        globalEventsJob?.cancel()
+        channelJobs.values.flatten().forEach { it.cancel() }
+        channelJobs.clear()
+        channels.clear()
+        presenceChannels.clear()
+        echoClient?.disconnect()
+        echoClient = null
+    }
+
+    private fun refreshChannelList() {
+        val client = echoClient ?: return
+        val infos = channels.map { (name, channel) ->
+            ChannelInfo(
+                name = name,
+                type = when {
+                    name.startsWith("presence-") -> ChannelType.PRESENCE
+                    name.startsWith("private-") -> ChannelType.PRIVATE
+                    else -> ChannelType.PUBLIC
+                },
+                state = channel.state.value,
+            )
+        }
+        _viewState.update {
+            it.copy(socketId = client.socketId, activeChannels = infos)
+        }
+    }
+
+    private fun appendEvent(channel: String?, event: String, data: String?) {
+        val entry = EventLogEntry(
+            id = eventIdCounter.incrementAndGet(),
+            channel = channel,
+            event = event,
+            data = data,
+        )
+        _viewState.update { state ->
+            state.copy(eventLog = (state.eventLog + entry).takeLast(MAX_LOG_SIZE))
+        }
+    }
+
+    private fun toast(message: String) {
+        viewModelScope.launch { _viewEffect.emit(MainViewEffect.ShowToast(message)) }
     }
 
     override fun onCleared() {
         super.onCleared()
-        connectionStateJob?.cancel()
-        errorStreamJob?.cancel()
-        viewModelScope.launch {
-            echoClient?.disconnect()
+        viewModelScope.launch { cleanupConnection() }
+    }
+
+    companion object {
+        private const val MAX_LOG_SIZE = 100
+
+        private fun createAuthenticator(endpoint: String, token: String): Authenticator? {
+            if (endpoint.isBlank()) return null
+            return Authenticator { socketId, channel ->
+                withContext(Dispatchers.IO) {
+                    try {
+                        val url = URL(endpoint)
+                        val conn = (url.openConnection() as HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                            setRequestProperty("Accept", "application/json")
+                            if (token.isNotBlank()) {
+                                setRequestProperty("Authorization", "Bearer $token")
+                            }
+                            doOutput = true
+                        }
+                        conn.outputStream.bufferedWriter().use { writer ->
+                            val body = "socket_id=${URLEncoder.encode(socketId, "UTF-8")}" +
+                                "&channel_name=${URLEncoder.encode(channel, "UTF-8")}"
+                            writer.write(body)
+                        }
+                        val response = conn.inputStream.bufferedReader().readText()
+                        conn.disconnect()
+                        Result.success(response)
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+            }
         }
     }
 }
