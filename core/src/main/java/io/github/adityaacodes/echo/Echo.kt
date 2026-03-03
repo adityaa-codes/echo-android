@@ -25,6 +25,7 @@ public class EchoBuilder internal constructor() {
     internal val clientConfig = ClientConfig()
     internal val authConfig = AuthConfig()
     internal val loggingConfig = LoggingConfig()
+    internal val reconnectionConfig = ReconnectionConfig()
 
     /**
      * Configures base client properties like host and API key.
@@ -45,6 +46,24 @@ public class EchoBuilder internal constructor() {
      */
     public fun logging(block: LoggingConfig.() -> Unit) {
         loggingConfig.apply(block)
+    }
+
+    /**
+     * Configures automatic reconnection behavior.
+     *
+     * @sample
+     * ```
+     * Echo.create {
+     *     reconnection {
+     *         maxAttempts = 5
+     *         baseDelayMs = 2000
+     *         maxDelayMs = 60_000
+     *     }
+     * }
+     * ```
+     */
+    public fun reconnection(block: ReconnectionConfig.() -> Unit) {
+        reconnectionConfig.apply(block)
     }
 
     /**
@@ -96,5 +115,17 @@ public class EchoBuilder internal constructor() {
         public var enabled: Boolean = false
         /** An optional custom logger function. Overrides Timber if provided. */
         public var logger: ((String) -> Unit)? = null
+    }
+
+    /**
+     * Configuration for automatic reconnection with exponential backoff.
+     */
+    public class ReconnectionConfig internal constructor() {
+        /** Maximum number of reconnection attempts before giving up. Defaults to 10. */
+        public var maxAttempts: Int = 10
+        /** Initial backoff delay in milliseconds. Defaults to 1000 (1 second). */
+        public var baseDelayMs: Long = 1000
+        /** Maximum backoff delay in milliseconds. Defaults to 30000 (30 seconds). */
+        public var maxDelayMs: Long = 30_000
     }
 }

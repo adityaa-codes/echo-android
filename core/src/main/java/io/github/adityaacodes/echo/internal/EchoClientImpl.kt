@@ -64,7 +64,13 @@ internal class EchoClientImpl(
         json = json,
         scope = scope,
     )
-    private val reconnectionManager = ExponentialBackoffReconnectionManager(scope, connection)
+    private val reconnectionManager = ExponentialBackoffReconnectionManager(
+        scope = scope,
+        connection = connection,
+        maxAttempts = builder.reconnectionConfig.maxAttempts,
+        baseDelayMs = builder.reconnectionConfig.baseDelayMs,
+        maxDelayMs = builder.reconnectionConfig.maxDelayMs,
+    )
     private val eventRouter = EventRouter(connection.incomingFrames)
 
     init {
