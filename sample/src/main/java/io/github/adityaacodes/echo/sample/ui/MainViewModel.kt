@@ -223,19 +223,24 @@ class MainViewModel : ViewModel() {
 
     private fun disconnect() {
         viewModelScope.launch {
-            cleanupConnection()
             _viewState.update {
                 it.copy(
+                    connectionState = ConnectionState.Disconnected(),
                     connectedUrl = "",
+                    socketId = null,
                     lastPingSuccessful = null,
                     activeChannels = emptyList(),
                     presenceMembers = emptyMap(),
                 )
             }
+            cleanupConnection()
         }
     }
 
     private suspend fun cleanupConnection() {
+        val clientToDisconnect = echoClient
+        echoClient = null
+
         connectionStateJob?.cancel()
         errorStreamJob?.cancel()
         globalEventsJob?.cancel()
@@ -243,8 +248,9 @@ class MainViewModel : ViewModel() {
         channelJobs.clear()
         channels.clear()
         presenceChannels.clear()
-        echoClient?.disconnect()
-        echoClient = null
+        viewModelScope.launch {
+            clientToDisconnect?.disconnect()
+        }
     }
 
     private fun refreshChannelList() {

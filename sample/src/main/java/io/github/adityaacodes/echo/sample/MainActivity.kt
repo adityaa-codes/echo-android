@@ -237,7 +237,7 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
     var showAuth by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Server Configuration", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
@@ -314,7 +314,7 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 androidx.compose.material3.Button(
                     onClick = {
@@ -329,17 +329,19 @@ fun ConnectionConfigSection(onIntent: (MainViewIntent) -> Unit) {
                             ),
                         )
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1.0f),
                 ) { Text("Connect") }
 
                 OutlinedButton(
                     onClick = { onIntent(MainViewIntent.Disconnect) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Disconnect") }
+                    modifier = Modifier.weight(1.2f),
+                ) {
+                    Text("Disconnect", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
 
                 OutlinedButton(
                     onClick = { onIntent(MainViewIntent.Ping) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.8f),
                 ) { Text("Ping") }
             }
         }
