@@ -5,115 +5,133 @@ import io.github.adityaacodes.echo.data.protocol.ErrorFrame
 import io.github.adityaacodes.echo.data.protocol.Ping
 import io.github.adityaacodes.echo.data.protocol.Pong
 import io.github.adityaacodes.echo.data.protocol.PusherFrame
+import io.github.adityaacodes.echo.engine.EchoEngine
 import io.github.adityaacodes.echo.error.EchoError
+import io.github.adityaacodes.echo.serialization.EchoSerializer
 import io.github.adityaacodes.echo.state.ConnectionState
-import io.github.adityaacodes.echo.utils.BackoffStrategy
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
-import io.ktor.client.plugins.websocket.webSocketSession
-import io.ktor.client.request.url
-import io.ktor.websocket.Frame
-import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal interface ReconnectionAwareConnection {
+    fun markReconnecting(attempt: Int)
+}
 
 internal class KtorEchoConnection(
-    private val client: HttpClient,
+    private val engine: EchoEngine,
     private val url: String,
+    private val serializer: EchoSerializer,
     private val json: Json = Json { ignoreUnknownKeys = true },
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + Job())
-) : EchoConnection {
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + Job()),
+) : EchoConnection, ReconnectionAwareConnection {
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val _incomingFrames = MutableSharedFlow<PusherFrame>(extraBufferCapacity = 256)
+    private val _errors = MutableSharedFlow<EchoError>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    override val errors: SharedFlow<EchoError> = _errors.asSharedFlow()
+
+    internal suspend fun emitError(error: EchoError) {
+        _errors.emit(error)
+    }
+
+    private val _incomingFrames = MutableSharedFlow<PusherFrame>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     val incomingFrames = _incomingFrames.asSharedFlow()
 
-    private var session: DefaultClientWebSocketSession? = null
     private var connectionJob: Job? = null
-    
     private var activityTimeoutJob: Job? = null
     private var pingJob: Job? = null
     private var pongJob: Job? = null
-    
-    // Add a flag to distinguish between user-requested disconnects and network drops
-    private var isUserDisconnected = false
+
+    private val isUserDisconnected = AtomicBoolean(false)
+    private val connectMutex = Mutex()
+    private val pingMutex = Mutex()
+    private var manualPingDeferred: CompletableDeferred<Boolean>? = null
+
+    private var currentActivityTimeout: Long = DEFAULT_ACTIVITY_TIMEOUT_MS
 
     override suspend fun connect() {
-        isUserDisconnected = false
-        connectInternal(attempt = 1)
+        connectMutex.withLock {
+            isUserDisconnected.set(false)
+            if (_state.value is ConnectionState.Connected || _state.value is ConnectionState.Connecting) {
+                return@withLock
+            }
+
+            connectionJob?.cancel()
+            activityTimeoutJob?.cancel()
+            pingJob?.cancel()
+            pongJob?.cancel()
+
+            connectionJob = scope.launch {
+                _state.value = ConnectionState.Connecting
+
+                try {
+                    engine.connect(url)
+                    engine.incoming.collect { frame ->
+                        handleRawText(frame)
+                    }
+
+                    if (!isUserDisconnected.get() && _state.value !is ConnectionState.Disconnected) {
+                        val error = EchoError.Network(IllegalStateException("WebSocket disconnected unexpectedly"))
+                        _state.value = ConnectionState.Disconnected(error)
+                        _errors.emit(error)
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) {
+                        throw e
+                    }
+                    if (!isUserDisconnected.get()) {
+                        val error = EchoError.Network(e)
+                        _state.value = ConnectionState.Disconnected(error)
+                        _errors.emit(error)
+                    }
+                } finally {
+                    if (isUserDisconnected.get() && _state.value !is ConnectionState.Disconnected) {
+                        _state.value = ConnectionState.Disconnected()
+                    }
+                    activityTimeoutJob?.cancel()
+                    pingJob?.cancel()
+                    pongJob?.cancel()
+                }
+            }
+        }
     }
 
-    private fun connectInternal(attempt: Int) {
-        if (_state.value is ConnectionState.Connected) {
-            return
-        }
-
-        connectionJob?.cancel()
-        activityTimeoutJob?.cancel()
-        pingJob?.cancel()
-        pongJob?.cancel()
-
-        connectionJob = scope.launch {
-            if (attempt == 1) {
-                _state.value = ConnectionState.Connecting
-            } else {
-                _state.value = ConnectionState.Reconnecting(attempt)
-                delay(BackoffStrategy.calculateDelay(attempt))
-            }
-
-            try {
-                session = client.webSocketSession {
-                    url(this@KtorEchoConnection.url)
-                }
-
-                session?.incoming?.consumeAsFlow()?.collect { frame ->
-                    if (frame is Frame.Text) {
-                        val text = frame.readText()
-                        handleRawText(text)
-                    }
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                
-                session?.close()
-                session = null
-
-                if (!isUserDisconnected) {
-                    _state.value = ConnectionState.Disconnected(EchoError.Network(e))
-                    // Start reconnection loop
-                    connectInternal(attempt + 1)
-                }
-            } finally {
-                if (isUserDisconnected && _state.value !is ConnectionState.Disconnected) {
-                    _state.value = ConnectionState.Disconnected()
-                }
-                activityTimeoutJob?.cancel()
-                pingJob?.cancel()
-                pongJob?.cancel()
-            }
+    override fun markReconnecting(attempt: Int) {
+        if (_state.value !is ConnectionState.Connected && _state.value !is ConnectionState.Connecting) {
+            _state.value = ConnectionState.Reconnecting(attempt)
         }
     }
 
     internal suspend fun handleRawText(text: String) {
         try {
-            val pusherFrame = json.decodeFromString<PusherFrame>(text)
-            
+            val pusherFrame = serializer.decode(text)
+
             when (pusherFrame) {
                 is ConnectionEstablished -> {
                     val connectionData = parseConnectionData(pusherFrame.data)
@@ -121,44 +139,36 @@ internal class KtorEchoConnection(
                     startActivityTimeout(connectionData.activityTimeout)
                 }
                 is Ping -> {
-                    val pongJson = json.encodeToString(PusherFrame.serializer(), Pong())
-                    sendRaw(pongJson)
+                    sendRaw(serializer.encode(Pong()))
                 }
                 is Pong -> {
-                    // Stop expecting a pong, restart activity timeout
                     pongJob?.cancel()
-                    // Restart activity timeout based on last known value or default
-                    // Assuming we keep track of the timeout value, let's say we restart the normal timeout
-                    // We need to keep a reference to the last timeout value
+                    manualPingDeferred?.complete(true)
                 }
                 is ErrorFrame -> {
-                    // Usually pusher errors contain code/message
                     val msg = pusherFrame.data?.message ?: "Unknown protocol error"
                     val code = pusherFrame.data?.code ?: -1
-                    _state.value = ConnectionState.Disconnected(EchoError.Protocol(code, msg))
-                    disconnect()
+                    val error = EchoError.Protocol(code, msg)
+                    _state.value = ConnectionState.Disconnected(error)
+                    _errors.emit(error)
+                    disconnect(isError = true)
                 }
                 else -> {
-                    // It's a channel event or something else, emit to bus
                     _incomingFrames.emit(pusherFrame)
                 }
             }
-            
-            // Any message received should reset the activity timeout
-            if (pusherFrame !is Pong) { // Let's simplify and just say any message resets it
+
+            if (pusherFrame !is Pong) {
                 resetActivityTimeout()
             }
-
         } catch (e: Exception) {
-            // Serialization error or malformed JSON
-            // We shouldn't disconnect just because of one bad frame, but maybe log it.
+            _errors.emit(EchoError.Serialization(e))
         }
     }
 
-    private var currentActivityTimeout: Long = 120_000L
-
     private fun startActivityTimeout(timeoutSeconds: Int?) {
-        currentActivityTimeout = (timeoutSeconds?.toLong() ?: 120L) * 1000L
+        val serverActivityTimeout = (timeoutSeconds?.toLong() ?: DEFAULT_ACTIVITY_TIMEOUT_SECONDS) * 1000L
+        currentActivityTimeout = minOf(DEFAULT_ACTIVITY_TIMEOUT_MS, serverActivityTimeout)
         resetActivityTimeout()
     }
 
@@ -166,26 +176,27 @@ internal class KtorEchoConnection(
         activityTimeoutJob?.cancel()
         pingJob?.cancel()
         pongJob?.cancel()
-        
-        if (_state.value !is ConnectionState.Connected) return
+
+        if (_state.value !is ConnectionState.Connected) {
+            return
+        }
 
         activityTimeoutJob = scope.launch {
             delay(currentActivityTimeout)
-            // No activity for timeout duration, send a ping
-            val pingJson = json.encodeToString(PusherFrame.serializer(), Ping())
-            val result = sendRaw(pingJson)
+            val result = sendRaw(serializer.encode(Ping()))
             if (result.isSuccess) {
-                // Wait for pong
                 pongJob = scope.launch {
-                    delay(10_000L) // Wait 10 seconds for a pong
-                    // If this block executes, we didn't get a pong in time
+                    delay(PONG_TIMEOUT_MS)
                     disconnect(isError = true)
                 }
             }
         }
     }
 
-    private data class ConnectionData(val socketId: String, val activityTimeout: Int?)
+    private data class ConnectionData(
+        val socketId: String,
+        val activityTimeout: Int?,
+    )
 
     private fun parseConnectionData(dataString: String): ConnectionData {
         return try {
@@ -199,42 +210,60 @@ internal class KtorEchoConnection(
     }
 
     internal suspend fun sendRaw(data: String): Result<Unit> {
-        val s = session ?: return Result.failure(IllegalStateException("Not connected"))
-        return try {
-            s.send(Frame.Text(data))
-            Result.success(Unit)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            Result.failure(e)
-        }
+        return engine.send(data)
     }
 
     override suspend fun disconnect() {
         disconnect(isError = false)
     }
-    
+
+    override suspend fun ping(timeoutMillis: Long): Boolean {
+        return pingMutex.withLock {
+            if (state.value !is ConnectionState.Connected) {
+                return false
+            }
+
+            val deferred = CompletableDeferred<Boolean>()
+            manualPingDeferred = deferred
+
+            try {
+                val pingResult = sendRaw(serializer.encode(Ping()))
+                if (pingResult.isFailure) {
+                    return false
+                }
+
+                withTimeoutOrNull(timeoutMillis) {
+                    deferred.await()
+                } ?: false
+            } catch (e: Exception) {
+                if (e is CancellationException) {
+                    throw e
+                }
+                false
+            } finally {
+                manualPingDeferred = null
+            }
+        }
+    }
+
     private suspend fun disconnect(isError: Boolean) {
-        if (!isError) {
-            isUserDisconnected = true
+        connectMutex.withLock {
+            if (!isError) {
+                isUserDisconnected.set(true)
+                _state.value = ConnectionState.Disconnected()
+            }
+            manualPingDeferred?.complete(false)
+            engine.disconnect()
+            connectionJob?.cancel()
+            activityTimeoutJob?.cancel()
+            pingJob?.cancel()
+            pongJob?.cancel()
         }
-        _state.value = ConnectionState.Disconnected()
-        session?.close()
-        session = null
-        connectionJob?.cancel()
-        activityTimeoutJob?.cancel()
-        pingJob?.cancel()
-        pongJob?.cancel()
-        
-        if (isError && !isUserDisconnected) {
-             // Let it try to reconnect by triggering a catch block upstream or similar.
-             // Given our current architecture, simply cancelling the session and connectionJob 
-             // will drop the websocket and trigger a reconnect if we refactor `connectInternal` slightly
-             // or we can just call connectInternal directly.
-             // For now, setting it to disconnected isn't enough to trigger reconnect unless we throw.
-             // Actually, `session?.close()` will cause `session?.incoming?.consumeAsFlow()` to complete,
-             // finishing the `try` block, which will then trigger `finally` and NOT the `catch` block.
-             // Let's ensure a reconnect happens if it's an error.
-             connectInternal(1) 
-        }
+    }
+
+    private companion object {
+        const val DEFAULT_ACTIVITY_TIMEOUT_SECONDS: Long = 120
+        const val DEFAULT_ACTIVITY_TIMEOUT_MS: Long = 120_000L
+        const val PONG_TIMEOUT_MS: Long = 30_000L
     }
 }

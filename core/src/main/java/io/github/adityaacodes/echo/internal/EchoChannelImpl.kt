@@ -34,6 +34,7 @@ internal class EchoChannelImpl(
     private val scope: CoroutineScope,
     private val json: Json,
     private val authenticator: Authenticator?,
+    private val onAuthFailure: (suspend () -> Unit)?,
     private val onLeave: (String) -> Unit
 ) : EchoChannel {
 
@@ -42,6 +43,7 @@ internal class EchoChannelImpl(
 
     private var subscriptionJob: Job? = null
     private var connectionStateJob: Job? = null
+    private var hasAttemptedAutoRefresh = false
 
     init {
         // Listen for subscription succeeded
@@ -82,6 +84,18 @@ internal class EchoChannelImpl(
         }
     }
 
+    override fun retry() {
+        val currentState = state.value
+        if (currentState is ChannelState.Failed) {
+            val connState = connection.state.value
+            if (connState is ConnectionState.Connected) {
+                doSubscribe(connState.socketId)
+            } else {
+                _state.value = ChannelState.Subscribing
+            }
+        }
+    }
+
     private fun doSubscribe(socketId: String) {
         // If we are already subscribed and the socket hasn't changed (though it usually does on reconnect),
         // we might not want to resubscribe. But if this is called, it means we connected/reconnected.
@@ -94,24 +108,38 @@ internal class EchoChannelImpl(
 
             if (name.startsWith("private-") || name.startsWith("presence-")) {
                 if (authenticator == null) {
-                    _state.value = ChannelState.Failed(EchoError.Auth(400, "No authenticator provided"))
+                    val error = EchoError.Auth(400, "No authenticator provided")
+                    _state.value = ChannelState.Failed(error)
+                    connection.emitError(error)
                     return@launch
                 }
                 
-                val result = authenticator.authenticate(socketId, name)
+                var result = authenticator.authenticate(socketId, name)
+                
+                // Automated token refresh retry logic
+                if (result.isFailure && !hasAttemptedAutoRefresh && onAuthFailure != null) {
+                    onAuthFailure.invoke()
+                    hasAttemptedAutoRefresh = true
+                    result = authenticator.authenticate(socketId, name)
+                }
+
                 if (result.isFailure) {
                     val ex = result.exceptionOrNull()
                     val authError = if (ex is EchoError.Auth) ex else EchoError.Auth(-1, ex?.message ?: "Unknown auth error")
                     _state.value = ChannelState.Failed(authError)
+                    connection.emitError(authError)
                     return@launch
                 } else {
+                    hasAttemptedAutoRefresh = false // Reset on success
                     val jsonResponse = result.getOrNull() ?: ""
                     try {
                         val element = json.parseToJsonElement(jsonResponse).jsonObject
                         authSignature = element["auth"]?.jsonPrimitive?.content
                         channelData = element["channel_data"]?.jsonPrimitive?.content
                     } catch (e: Exception) {
-                        _state.value = ChannelState.Failed(EchoError.Auth(-1, "Invalid auth response format"))
+                        val error = EchoError.Auth(-1, "Invalid auth response format")
+                        _state.value = ChannelState.Failed(error)
+                        connection.emitError(error)
                         return@launch
                     }
                 }

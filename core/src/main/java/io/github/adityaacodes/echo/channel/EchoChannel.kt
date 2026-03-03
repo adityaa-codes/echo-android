@@ -40,4 +40,9 @@ public interface EchoChannel {
      * Unsubscribes from this channel immediately.
      */
     public fun leave()
+
+    /**
+     * Manually re-triggers the subscription process if the channel is in a [ChannelState.Failed] state.
+     */
+    public fun retry()
 }

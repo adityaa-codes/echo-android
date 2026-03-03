@@ -1,6 +1,9 @@
 package io.github.adityaacodes.echo
 
 import io.github.adityaacodes.echo.auth.Authenticator
+import io.github.adityaacodes.echo.engine.EchoEngine
+import io.github.adityaacodes.echo.serialization.DefaultEchoSerializer
+import io.github.adityaacodes.echo.serialization.EchoSerializer
 
 /**
  * The main entry point for creating an [EchoClient] instance.
@@ -58,6 +61,14 @@ public class EchoBuilder internal constructor() {
         public var useTls: Boolean = true
         /** The port to connect to. Defaults to null, which relies on standard ws (80) or wss (443) ports. */
         public var port: Int? = null
+        /**
+         * Optional custom WebSocket engine factory. If omitted, the SDK uses [io.github.adityaacodes.echo.engine.KtorEchoEngine].
+         */
+        public var engineFactory: (() -> EchoEngine)? = null
+        /**
+         * Serializer used for protocol frame encoding/decoding. Defaults to [DefaultEchoSerializer].
+         */
+        public var serializer: EchoSerializer = DefaultEchoSerializer()
     }
 
     /**
@@ -70,15 +81,20 @@ public class EchoBuilder internal constructor() {
         public var authEndpoint: String? = null
         /** An optional callback providing bearer tokens for HTTP auth requests. */
         public var tokenProvider: (() -> String)? = null
+        /**
+         * An optional callback invoked when channel authentication fails.
+         * Useful for the application to refresh its JWT/Session and then let the SDK automatically retry.
+         */
+        public var onAuthFailure: (suspend () -> Unit)? = null
     }
 
     /**
      * Configuration for SDK logging.
      */
     public class LoggingConfig internal constructor() {
-        /** The severity level to log at. */
-        public var level: Int = 0 // Will replace with enum later if needed
-        /** An optional custom logger function. */
+        /** Enable internal Timber logging. Defaults to false. */
+        public var enabled: Boolean = false
+        /** An optional custom logger function. Overrides Timber if provided. */
         public var logger: ((String) -> Unit)? = null
     }
 }

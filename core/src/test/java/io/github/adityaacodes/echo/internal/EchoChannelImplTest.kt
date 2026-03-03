@@ -34,6 +34,7 @@ class EchoChannelImplTest {
         val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
         every { connection.state } returns connectionState
         coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+        coEvery { connection.emitError(any()) } returns Unit
 
         val incomingFrames = MutableSharedFlow<PusherFrame>()
         val router = EventRouter(incomingFrames)
@@ -45,6 +46,7 @@ class EchoChannelImplTest {
             scope = backgroundScope,
             json = json,
             authenticator = null,
+            onAuthFailure = null,
             onLeave = {}
         )
 
@@ -77,6 +79,7 @@ class EchoChannelImplTest {
         val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected("123.456"))
         every { connection.state } returns connectionState
         coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+        coEvery { connection.emitError(any()) } returns Unit
 
         val incomingFrames = MutableSharedFlow<PusherFrame>()
         val router = EventRouter(incomingFrames)
@@ -91,6 +94,7 @@ class EchoChannelImplTest {
             scope = backgroundScope,
             json = json,
             authenticator = authenticator,
+            onAuthFailure = null,
             onLeave = {}
         )
 
@@ -118,6 +122,7 @@ class EchoChannelImplTest {
         val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected("123.456"))
         every { connection.state } returns connectionState
         coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+        coEvery { connection.emitError(any()) } returns Unit
 
         val incomingFrames = MutableSharedFlow<PusherFrame>()
         val router = EventRouter(incomingFrames)
@@ -132,6 +137,7 @@ class EchoChannelImplTest {
             scope = backgroundScope,
             json = json,
             authenticator = authenticator,
+            onAuthFailure = null,
             onLeave = {}
         )
 
@@ -156,6 +162,7 @@ class EchoChannelImplTest {
         val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected("123.456"))
         every { connection.state } returns connectionState
         coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+        coEvery { connection.emitError(any()) } returns Unit
 
         val router = EventRouter(MutableSharedFlow())
         val authenticator = mockk<Authenticator>()
@@ -168,6 +175,7 @@ class EchoChannelImplTest {
             scope = backgroundScope,
             json = json,
             authenticator = authenticator,
+            onAuthFailure = null,
             onLeave = {}
         )
         runCurrent()
@@ -190,6 +198,7 @@ class EchoChannelImplTest {
         val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected("socket-1"))
         every { connection.state } returns connectionState
         coEvery { connection.sendRaw(any()) } returns Result.success(Unit)
+        coEvery { connection.emitError(any()) } returns Unit
 
         val incomingFrames = MutableSharedFlow<PusherFrame>()
         val router = EventRouter(incomingFrames)
@@ -201,6 +210,7 @@ class EchoChannelImplTest {
             scope = backgroundScope,
             json = json,
             authenticator = null,
+            onAuthFailure = null,
             onLeave = {}
         )
 

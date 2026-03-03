@@ -6,22 +6,31 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import io.github.adityaacodes.echo.channel.EchoChannel
 import io.github.adityaacodes.echo.sample.ui.MainViewEffect
 import io.github.adityaacodes.echo.sample.ui.MainViewIntent
 import io.github.adityaacodes.echo.sample.ui.MainViewModel
 import io.github.adityaacodes.echo.sample.ui.theme.EchoTheme
+import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        if (Timber.treeCount == 0) {
+            Timber.plant(Timber.DebugTree())
+        }
+
         setContent {
             EchoTheme {
                 Surface(
@@ -61,6 +70,7 @@ fun MainScreen(
     var portInput by remember { mutableStateOf("8080") }
     var keyInput by remember { mutableStateOf("reverb-app-key") }
     var useTls by remember { mutableStateOf(false) }
+    var channelInput by remember { mutableStateOf("my-channel") }
 
     Scaffold(
         topBar = {
@@ -83,6 +93,21 @@ fun MainScreen(
             Text(
                 text = "Connection State: ${state.connectionState}",
                 style = MaterialTheme.typography.titleMedium
+            )
+            
+            Text(
+                text = "Socket ID: ${state.socketId ?: "N/A"}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Last Ping: ${
+                    when (state.lastPingSuccessful) {
+                        true -> "Success"
+                        false -> "Failed"
+                        null -> "Not run"
+                    }
+                }",
+                style = MaterialTheme.typography.bodyMedium
             )
 
             if (state.errorMessage != null) {
@@ -148,12 +173,41 @@ fun MainScreen(
                 ) {
                     Text("Disconnect")
                 }
+
+                OutlinedButton(
+                    onClick = { onIntent(MainViewIntent.Ping) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Ping Server")
+                }
             }
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             
-            Text("Subscribed Channels (Coming Soon)", style = MaterialTheme.typography.titleSmall)
-            // TODO: Display list of channels
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = channelInput,
+                    onValueChange = { channelInput = it },
+                    label = { Text("Channel Name") },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = { onIntent(MainViewIntent.Subscribe(channelInput)) },
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                ) {
+                    Text("Join")
+                }
+            }
+
+            Text("Subscribed Channels:", style = MaterialTheme.typography.titleSmall)
+            
+            LazyColumn {
+                items(state.activeChannels) { channelName ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text(text = channelName, modifier = Modifier.padding(8.dp))
+                    }
+                }
+            }
         }
     }
 }

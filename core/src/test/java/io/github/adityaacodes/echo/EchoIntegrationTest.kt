@@ -33,7 +33,7 @@ class EchoIntegrationTest {
         
         val httpClient = HttpClient(mockEngine) {
             install(WebSockets) {
-                pingInterval = -1L
+                pingIntervalMillis = 0L
             }
         }
         
@@ -74,8 +74,7 @@ class EchoIntegrationTest {
         // Attempt to create a channel
         val channel = client.private("test")
         assertEquals("private-test", channel.name)
-        
-        val presence = client.join("room")
-        assertEquals("presence-room", presence.name)
-    }
+
+        val presence = client.presence("room")
+        assertEquals("presence-room", presence.name)    }
 }

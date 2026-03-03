@@ -9,98 +9,98 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 @Serializable(with = PusherFrameSerializer::class)
-internal sealed class PusherFrame
+public sealed class PusherFrame
 
 @Serializable
-internal data class ConnectionEstablished(
-    val data: String
+public data class ConnectionEstablished(
+    public val data: String,
 ) : PusherFrame()
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
-internal data class Ping(
-    @EncodeDefault val event: String = "pusher:ping",
-    val data: JsonElement? = null
+public data class Ping(
+    @EncodeDefault public val event: String = "pusher:ping",
+    public val data: JsonElement? = null,
 ) : PusherFrame()
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
-internal data class Pong(
-    @EncodeDefault val event: String = "pusher:pong",
-    val data: JsonElement? = null
+public data class Pong(
+    @EncodeDefault public val event: String = "pusher:pong",
+    public val data: JsonElement? = null,
 ) : PusherFrame()
 
 @Serializable
-internal data class ErrorFrame(
-    val data: ErrorData? = null
+public data class ErrorFrame(
+    public val data: ErrorData? = null,
 ) : PusherFrame() {
     @Serializable
-    internal data class ErrorData(
-        val message: String,
-        val code: Int? = null
+    public data class ErrorData(
+        public val message: String,
+        public val code: Int? = null,
     )
 }
 
 @Serializable
-internal data class SubscriptionSucceeded(
-    val channel: String,
-    val data: String? = null
+public data class SubscriptionSucceeded(
+    public val channel: String,
+    public val data: String? = null,
 ) : PusherFrame()
 
 @Serializable
-internal data class MemberAdded(
-    val channel: String,
-    val data: String? = null
+public data class MemberAdded(
+    public val channel: String,
+    public val data: String? = null,
 ) : PusherFrame()
 
 @Serializable
-internal data class MemberRemoved(
-    val channel: String,
-    val data: String? = null
+public data class MemberRemoved(
+    public val channel: String,
+    public val data: String? = null,
 ) : PusherFrame()
 
 @Serializable
-internal data class GenericEvent(
-    val event: String,
-    val channel: String? = null,
-    val data: JsonElement? = null
+public data class GenericEvent(
+    public val event: String,
+    public val channel: String? = null,
+    public val data: JsonElement? = null,
 ) : PusherFrame()
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
-internal data class SubscribeCommand(
-    @EncodeDefault val event: String = "pusher:subscribe",
-    val data: SubscribeData
+public data class SubscribeCommand(
+    @EncodeDefault public val event: String = "pusher:subscribe",
+    public val data: SubscribeData,
 ) : PusherFrame() {
     @Serializable
-    internal data class SubscribeData(
-        val channel: String,
-        val auth: String? = null,
-        val channel_data: String? = null
+    public data class SubscribeData(
+        public val channel: String,
+        public val auth: String? = null,
+        public val channel_data: String? = null,
     )
 }
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
-internal data class UnsubscribeCommand(
-    @EncodeDefault val event: String = "pusher:unsubscribe",
-    val data: UnsubscribeData
+public data class UnsubscribeCommand(
+    @EncodeDefault public val event: String = "pusher:unsubscribe",
+    public val data: UnsubscribeData,
 ) : PusherFrame() {
     @Serializable
-    internal data class UnsubscribeData(
-        val channel: String
+    public data class UnsubscribeData(
+        public val channel: String,
     )
 }
 
 @Serializable
-internal data class WhisperCommand(
-    val event: String,
-    val channel: String,
-    val data: JsonElement? = null
+public data class WhisperCommand(
+    public val event: String,
+    public val channel: String,
+    public val data: JsonElement? = null,
 ) : PusherFrame()
 
-internal object PusherFrameSerializer : JsonContentPolymorphicSerializer<PusherFrame>(PusherFrame::class) {
-    override fun selectDeserializer(element: JsonElement): DeserializationStrategy<PusherFrame> {
+public object PusherFrameSerializer : JsonContentPolymorphicSerializer<PusherFrame>(PusherFrame::class) {
+    public override fun selectDeserializer(element: JsonElement): DeserializationStrategy<PusherFrame> {
         val event = element.jsonObject["event"]?.jsonPrimitive?.content ?: return GenericEvent.serializer()
         
         return when (event) {

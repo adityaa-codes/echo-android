@@ -44,10 +44,9 @@ class EchoClientImplTest {
         
         val privChannel = client.private("my-priv")
         assertTrue(privChannel.name.startsWith("private-"))
-        
-        val presChannel = client.join("my-pres")
-        assertTrue(presChannel.name.startsWith("presence-"))
-        
+
+        val presChannel = client.presence("my-pres")
+        assertTrue(presChannel.name.startsWith("presence-"))        
         client.leave("pub-chan")
         
         // Ensure new instance is created after leave
