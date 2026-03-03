@@ -27,15 +27,28 @@ jobs:
           VERSION="${TAG#v}"
           echo "VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Write signing secrets to Gradle properties
+        env:
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_SECRET_KEY: ${{ secrets.SIGNING_SECRET_KEY }}
+        run: |
+          mkdir -p ~/.gradle
+          python3 - <<'PYEOF'
+          import os
+          props_path = os.path.expanduser("~/.gradle/gradle.properties")
+          with open(props_path, "a") as f:
+              f.write(f"signing.keyId={os.environ['SIGNING_KEY_ID']}\n")
+              f.write(f"signing.password={os.environ['SIGNING_PASSWORD']}\n")
+              f.write(f"signing.secretKey={os.environ['SIGNING_SECRET_KEY']}\n")
+          PYEOF
+
       - name: Publish signed artifacts to Sonatype staging API
         run: >
           ./gradlew :core:publishReleasePublicationToSonatypeRepository
           -PVERSION_NAME="$VERSION_NAME"
           -PmavenCentralUsername="${{ secrets.MAVEN_CENTRAL_USERNAME }}"
           -PmavenCentralPassword="${{ secrets.MAVEN_CENTRAL_PASSWORD }}"
-          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
-          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
-          -Psigning.secretKey="${{ secrets.SIGNING_SECRET_KEY }}"
           --no-daemon
 
       - name: Promote deployment to Central Portal
@@ -45,3 +58,4 @@ jobs:
           curl --fail-with-body -X POST \
             -H "Authorization: Bearer ${AUTH}" \
             "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/io.github.adityaa-codes?publishing_type=automatic"
+
