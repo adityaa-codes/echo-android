@@ -21,9 +21,11 @@ Built for [Laravel Reverb](https://reverb.laravel.com) and any Pusher Channels�
 - **Pusher Protocol v7** — Full compatibility with public, private, and presence channels
 - **Laravel Reverb ready** — First-class support for self-hosted Reverb servers
 - **Pluggable architecture** — Swap WebSocket engines and serializers via the DSL
-- **Robust connection lifecycle** — Mutex-guarded state machine with automatic reconnection and exponential backoff
+- **Robust connection lifecycle** — Mutex-guarded state machine with automatic reconnection, exponential backoff, and terminal suspended/failed states
 - **Protocol-level ping/pong** — Configurable keep-alive with 30 s pong timeout
-- **Global error stream** — Typed `EchoError` sealed hierarchy exposed as `SharedFlow`
+- **Global & Per-Channel errors** — Typed `EchoError` sealed hierarchy exposed globally and per-channel
+- **Zero-downtime token rotation** — Proactive, non-disruptive channel token refreshing
+- **Presence updates** — Support for live member metadata updating on presence channels
 - **Backpressure handling** — Configurable buffer overflow strategies on all internal flows
 - **Minimal public API** — `internal` by default; only consumer-facing types are `public`
 
@@ -41,7 +43,7 @@ Built for [Laravel Reverb](https://reverb.laravel.com) and any Pusher Channels�
 - [Sample App](#sample-app)
 - [Testing](#testing)
 - [Contributing](#contributing)
-- [Roadmap](ROADMAP.md)
+- [Roadmap](docs/ROADMAP.md)
 - [License](#license)
 
 ---
@@ -91,18 +93,18 @@ Look at `<latest>` / `<release>` in the response and use that version.
 git clone https://github.com/adityaacodes/echo-android.git
 ```
 
-2. Include the `:core` module in your project's `settings.gradle.kts`:
+2. Include the `:echo` module in your project's `settings.gradle.kts`:
 
 ```kotlin
-include(":core")
-project(":core").projectDir = file("../echo-android/core")
+include(":echo")
+project(":echo").projectDir = file("../echo-android/echo")
 ```
 
 3. Add the dependency in your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation(project(":core"))
+    implementation(project(":echo"))
 }
 ```
 
@@ -205,6 +207,7 @@ val echo = Echo.create {
         authenticator = myAuthenticator    // Authenticator for private/presence channels
         authEndpoint = "/broadcasting/auth" // Optional: HTTP auth endpoint
         tokenProvider = { "Bearer ..." }   // Optional: token for HTTP auth
+        tokenExpiryMs = 60_000             // Optional: hint for proactive token refresh
         onAuthFailure = {                  // Optional: retry callback on auth failure
             refreshToken()
         }
@@ -219,6 +222,7 @@ val echo = Echo.create {
         maxAttempts = 10                   // Default: 10 attempts
         baseDelayMs = 1_000                // Default: 1 second
         maxDelayMs = 30_000                // Default: 30 seconds
+        suspendAfterMs = 120_000           // Default: 2 minutes
     }
 }
 ```
@@ -256,6 +260,7 @@ val presence = echo.presence("chat-room")
 presence.here { members -> /* initial member list */ }
 presence.joining { member -> /* a member joined */ }
 presence.leaving { member -> /* a member left */ }
+presence.updating { member -> /* a member updated their data */ }
 ```
 
 ### Leaving a Channel
@@ -300,11 +305,13 @@ Disconnected ──► Connecting ──► Connected
      └──── Disconnected ◄── Reconnecting
 ```
 
-The SDK exposes `StateFlow<ConnectionState>` with four states:
+The SDK exposes `StateFlow<ConnectionState>` with six states:
 - **`Disconnected`** — not connected (optionally includes disconnect reason)
 - **`Connecting`** — WebSocket handshake in progress
 - **`Connected`** — handshake complete, `socketId` available
 - **`Reconnecting`** — lost connection, attempting automatic reconnect with exponential backoff
+- **`Suspended`** — degraded connection after repeated reconnection failures
+- **`Failed`** — unrecoverable protocol error (e.g., bad app key)
 
 ### Error Hierarchy
 
@@ -372,23 +379,35 @@ The `sample` module provides a fully functional reference app demonstrating:
 - Manual ping with result feedback
 - UDF architecture with `StateFlow<ViewState>` and `ViewIntent`
 
-Run it:
+### Testing Locally with `echo-server`
+
+We have built a dedicated test server for this SDK. You can run the [echo-server](https://github.com/adityaa-codes/echo-server) locally to test all features out of the box.
+
+The `echo-server` is a demo WebSocket backend built with Laravel, Reverb, and DDEV. It continuously broadcasts scheduled fake "tick" events every second to public, private, and presence channels so you can test subscriptions, authentication, and real-time event handling end-to-end. It also provides pre-seeded demo users for the `/broadcasting/auth` endpoint.
+
+**Quick Server Setup:**
+1. Clone: `git clone https://github.com/adityaa-codes/echo-server echo-server`
+2. Bootstrap: `ddev setup` (Starts Docker containers, runs migrations, and seeds DB)
+3. Start daemons: `ddev demo-up` (Runs Reverb, Scheduler, and Queues)
+4. Print SDK info: `ddev demo-info` (Outputs the exact Host, Port, App Key, and channel names you need)
+
+**Run the Sample App:**
 
 ```bash
 ./gradlew :sample:installDebug
 ```
 
-For local, non-committed sample credentials, set Gradle properties in `~/.gradle/gradle.properties`:
+For local, non-committed sample credentials, set the corresponding Gradle properties in your user-level `~/.gradle/gradle.properties` (based on the `ddev demo-info` output):
 
 ```properties
-ECHO_SAMPLE_HOST=your-host
+ECHO_SAMPLE_HOST=your-ddev-host # e.g. echo-server.ddev.site or 10.0.2.2 for Android Emulator
 ECHO_SAMPLE_PORT=8080
 ECHO_SAMPLE_USE_TLS=false
-ECHO_SAMPLE_APP_KEY=your-app-key
-ECHO_SAMPLE_AUTH_ENDPOINT=http://your-host/broadcasting/auth
+ECHO_SAMPLE_APP_KEY=reverb-app-key
+ECHO_SAMPLE_AUTH_ENDPOINT=http://your-ddev-host/broadcasting/auth
 ```
 
-> Tip: In the sample UI, provide host without scheme (for example `staging.example.com`), then toggle TLS based on your endpoint.
+> **Tip:** If testing on a physical Android device, you can use `ddev share-cloudflared` in the server repo to expose the backend via a public URL, then update `ECHO_SAMPLE_HOST`, toggle `ECHO_SAMPLE_USE_TLS=true`, and adjust the auth endpoint accordingly.
 
 ---
 
@@ -396,20 +415,20 @@ ECHO_SAMPLE_AUTH_ENDPOINT=http://your-host/broadcasting/auth
 
 ```bash
 # Run unit tests
-./gradlew :core:testDebugUnitTest
+./gradlew :echo:testDebugUnitTest
 
 # Run with coverage report
-./gradlew :core:createDebugUnitTestCoverageReport
-# Report: core/build/reports/coverage/test/debug/index.html
+./gradlew :echo:createDebugUnitTestCoverageReport
+# Report: echo/build/reports/coverage/test/debug/index.html
 
 # Lint with ktlint
-./gradlew :core:ktlintCheck :sample:ktlintCheck
+./gradlew :echo:ktlintCheck :sample:ktlintCheck
 
 # Auto-format
-./gradlew :core:ktlintFormat :sample:ktlintFormat
+./gradlew :echo:ktlintFormat :sample:ktlintFormat
 
 # Build the library
-./gradlew :core:assemble
+./gradlew :echo:assemble
 ```
 
 Current coverage: **≥ 80% line coverage** (40 tests across 8 test classes).
@@ -420,7 +439,7 @@ Current coverage: **≥ 80% line coverage** (40 tests across 8 test classes).
 
 ```
 echo-android/
-├── core/                          # Library module
+├── echo/                          # Library module
 │   └── src/main/java/.../echo/
 │       ├── Echo.kt                # Entry point & DSL builder
 │       ├── EchoClient.kt          # Public client interface
@@ -435,9 +454,7 @@ echo-android/
 │       ├── state/                  # ConnectionState & ChannelState
 │       └── utils/                  # Logger
 ├── sample/                        # Sample Android app
-├── gradle/libs.versions.toml      # Centralized dependency versions
-├── docs/                          # PRDs and specifications
-└── skills/                        # AI agent skill definitions
+└── gradle/libs.versions.toml      # Centralized dependency versions
 ```
 
 ---
